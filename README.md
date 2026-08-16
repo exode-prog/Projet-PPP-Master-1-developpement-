@@ -17,7 +17,7 @@ Démonstration centrale du projet : scénario "attaque contenue" — un serveur 
 
 ## Structure du dépôt
 
-\`\`\`
+```
 mcp-secure-platform/
 ├── src/target_server/       serveur MCP de démo, puis serveur cible vulnérable
 ├── sandbox/                 profils gVisor, seccomp, AppArmor
@@ -28,7 +28,7 @@ mcp-secure-platform/
 ├── requirements.txt
 ├── .env.example
 └── README.md
-\`\`\`
+```
 
 ## Installation — Rejoindre le projet (pour l'équipe)
 
@@ -36,47 +36,47 @@ Chers collègues de EC2LT, merci de suivre ces étapes dans l'ordre pour avoir e
 
 ### 1. Cloner le dépôt
 
-\`\`\`bash
+```bash
 git clone https://github.com/exode-prog/Projet-PPP-Master-1-developpement-.git
 cd Projet-PPP-Master-1-developpement-
-\`\`\`
+```
 
 ### 2. Outils système (Ubuntu 24)
 
-\`\`\`bash
+```bash
 sudo apt update
 sudo apt install git python3-venv -y
-\`\`\`
+```
 
 Pour Docker, suivre la documentation officielle : https://docs.docker.com/engine/install/ubuntu/
 
 ### 3. Environnement Python
 
-\`\`\`bash
+```bash
 python3 -m venv MCP-PPP
 source MCP-PPP/bin/activate
 pip install --upgrade pip
 pip install fastmcp
-\`\`\`
+```
 
 ### 4. Node.js via nvm (nécessaire pour MCP Inspector)
 
-\`\`\`bash
+```bash
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
 source ~/.bashrc
 nvm install 22
-\`\`\`
+```
 
 ### 5. Ollama et modèle local
 
-\`\`\`bash
+```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ollama pull qwen2.5:3b
-\`\`\`
+```
 
 ### 6. Vérifier que tout fonctionne
 
-\`\`\`bash
+```bash
 git --version
 docker --version
 docker compose version
@@ -85,15 +85,15 @@ fastmcp --version
 node --version
 npm --version
 ollama --version
-\`\`\`
+```
 
 Toutes les commandes doivent répondre sans erreur. En cas de doute sur une version, vérifier dans `docs/cahier-des-charges-technique.md`.
 
-### 7. Lancer MCP Inspector (outil de debug)
+### 7. Lancer MCP Inspector (outil de débogage)
 
-\`\`\`bash
+```bash
 npx @modelcontextprotocol/inspector
-\`\`\`
+```
 
 Ouvrir ensuite l'URL affichée dans le terminal dans un navigateur.
 
@@ -114,16 +114,16 @@ GitHub n'accepte plus les mots de passe classiques en ligne de commande. Chaque 
 
 Pour éviter de ressaisir le token à chaque fois :
 
-\`\`\`bash
+```bash
 git config --global credential.helper store
-\`\`\`
+```
 
 ## Document de référence
 
-En cas de blocage, un document complémentaire est disponible ici :
+En cas de blocage,  j ai partage mon fichier docx ici ca peut  vous aider :
 https://docs.google.com/document/d/1XvrIbPh8w_J7UX1EusB-1BuBKecIPWpmOzRJd9BoSaU/edit?usp=sharing
 
-## Roadmap (sprints)
+## Roadmap (les  sprints)
 
 Voir le détail complet des tâches dans `docs/PPP_Planning_Sprints.docx` et le tracker `docs/PPP_Sprints_Taches.xlsx`.
 
