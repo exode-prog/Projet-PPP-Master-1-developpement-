@@ -1,0 +1,22 @@
+# Environnement virtuel Python
+MCP-PPP/
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Variables d'environnement / secrets
+.env
+*.pem
+*.key
+
+# Docker
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
