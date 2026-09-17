@@ -1,8 +1,6 @@
 """
-Serveur MCP de démonstration pour la validation du socle du sprint 1.
-Ce serveur expose 2 outils (Tools), 1 Resource et 1 Prompt via FastMCP,
-pour valider que la chaîne complète fonctionne :
-FastMCP -> MCP Inspector -> Ollama.
+Serveur MCP de démonstration pour la validation du socle du sprint 1,
+enrichi de la sécurité applicative au Sprint 2 (JWT, RBAC, consentement, audit).
 
 Lancement local (stdio, par défaut) :
     python src/target_server/server.py
@@ -13,7 +11,8 @@ Lancement en Streamable HTTP (pour accès distant / conteneurisé) :
 
 import os
 
-from fastmcp import FastMCP
+from fastmcp import FastMCP, Context
+from audit import log_event
 
 mcp = FastMCP(name="Projet master 1 : mcp-secure-platform")
 
@@ -21,13 +20,26 @@ mcp = FastMCP(name="Projet master 1 : mcp-secure-platform")
 @mcp.tool()
 def hello(name: str = "monde") -> str:
     """Retourne un message de salutation simple. Sert à valider la chaîne MCP de bout en bout."""
-    return f"Bonjour, {name} ! Le serveur MCP fonctionne correctement."
+    result = f"Bonjour, {name} ! Le serveur MCP fonctionne correctement."
+    log_event("hello", {"name": name}, "success", result)
+    return result
 
 
 @mcp.tool()
-def add(a: float, b: float) -> float:
-    """Additionne deux nombres. Outil de test basique pour vérifier les paramètres typés."""
-    return a + b
+async def add(a: float, b: float, ctx: Context) -> float:
+    """Additionne deux nombres. Nécessite une confirmation explicite de l'utilisateur avant exécution."""
+    result = await ctx.elicit(
+        message=f"Confirmer le calcul {a} + {b} = {a + b} ?",
+        response_type=bool,
+    )
+
+    if result.action != "accept" or not result.data:
+        log_event("add", {"a": a, "b": b}, "error", "Consentement refusé")
+        raise ValueError("Opération annulée : consentement non accordé par l'utilisateur.")
+
+    computed = a + b
+    log_event("add", {"a": a, "b": b}, "success", computed)
+    return computed
 
 
 @mcp.resource("config://server/security-status")
@@ -38,7 +50,8 @@ def security_status() -> dict:
         "runtime_isolation": "none",
         "network_isolation": "none",
         "note": "Ce serveur n'est pas encore isolé. Sandbox gVisor prévue au Sprint 4.",
-        "sprint": 1,
+        "sprint": 2,
+        "auth": "Keycloak OIDC + OAuth 2.1 + PKCE + RBAC (Sprint 2)",
     }
 
 
