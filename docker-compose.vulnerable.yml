@@ -1,0 +1,28 @@
+# docker-compose SÉPARÉ pour le serveur MCP vulnérable (Sprint 3).
+# NE JAMAIS fusionner avec docker-compose.yml (le compose principal).
+# Lancement explicite requis : docker compose -f docker-compose.vulnerable.yml up
+#
+# Ce fichier sert de PoC "sans protection" (baseline du Sprint 3).
+# Le Sprint 4 introduira une version durcie avec gVisor pour comparaison.
+
+services:
+  vulnerable-server:
+    build:
+      context: .
+      dockerfile: src/vulnerable_server/Dockerfile
+    container_name: mcp-vulnerable-server-UNSAFE
+    # Pas de restart automatique : ce conteneur ne doit tourner que
+    # ponctuellement, pour une démo contrôlée, jamais en arrière-plan permanent.
+    restart: "no"
+    ports:
+      - "127.0.0.1:8001:8001"  # lié explicitement à localhost, jamais 0.0.0.0
+    environment:
+      - MCP_TRANSPORT=http
+      - MCP_PORT=8001
+    networks:
+      - vulnerable-net
+
+networks:
+  vulnerable-net:
+    driver: bridge
+    # Réseau dédié et isolé du réseau principal (mcp-net) du projet.
