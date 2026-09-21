@@ -1,0 +1,41 @@
+# docker-compose DURCI pour le serveur MCP vulnérable (Sprint 4).
+# Même code applicatif vulnérable que le Sprint 3 (docker-compose.vulnerable.yml),
+# mais exécuté avec gVisor + durcissement complet.
+#
+# Objectif : démontrer que l'isolation infrastructure contient l'exploitation,
+# même sans corriger la faille applicative elle-même.
+#
+# Lancement : docker compose -f docker-compose.vulnerable-hardened.yml up
+
+services:
+  vulnerable-server-hardened:
+    build:
+      context: .
+      dockerfile: src/vulnerable_server/Dockerfile
+    container_name: mcp-vulnerable-server-HARDENED
+    runtime: runsc                    # gVisor : isolation du runtime
+    restart: "no"
+    ports:
+      - "127.0.0.1:8002:8002"         # port différent de la version non protégée (8001)
+    environment:
+      - MCP_TRANSPORT=http
+      - MCP_PORT=8002
+
+    # --- Durcissement (cahier des charges Partie B.3, Axe 1) ---
+    cap_drop:
+      - ALL                            # suppression totale des privilèges Linux
+    read_only: true                    # système de fichiers racine en lecture seule
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m    # zone temporaire, sans exécution possible
+  
+    security_opt:
+      - no-new-privileges:true         # empêche l'élévation de privilèges
+      # Le profil seccomp par défaut de Docker est appliqué automatiquement
+      # (pas besoin de le déclarer explicitement) — il filtre déjà ~44 syscalls dangereux.
+    networks:
+      - vulnerable-hardened-net
+
+networks:
+  vulnerable-hardened-net:
+    driver: bridge
+    # Réseau isolé, séparé de vulnerable-net (Sprint 3) et de mcp-net (production)

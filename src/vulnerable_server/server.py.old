@@ -1,5 +1,5 @@
 """
-SERVEUR MCP VOLONTAIREMENT VULNÉRABLE : SPRINT 3
+SERVEUR MCP VOLONTAIREMENT VULNÉRABLE :  SPRINT 3
 
 Ce serveur contient une injection de commande (RCE) INTRODUITE DÉLIBÉRÉMENT
 à des fins pédagogiques et démonstratives, dans le cadre du scénario
@@ -13,12 +13,6 @@ l'isolation gVisor + durcissement contient l'exploitation de cette faille.
 
 Lancement (STRICTEMENT en environnement isolé) :
     python src/vulnerable_server/server.py
-
-Note réseau (Sprint 4) : la protection d'accès (limiter à 127.0.0.1 de
-l'hôte) se fait au niveau Docker, via docker-compose (port publié en
-"127.0.0.1:PORT:PORT"). À l'intérieur du conteneur, écouter sur 0.0.0.0
-ne concerne que le réseau interne isolé du conteneur — sans danger, car
-Docker filtre déjà l'accès depuis l'extérieur de l'hôte.
 """
 
 import os
@@ -73,8 +67,11 @@ if __name__ == "__main__":
     transport = os.environ.get("MCP_TRANSPORT", "stdio")
 
     if transport == "http":
-        host = os.environ.get("MCP_HOST", "0.0.0.0")
+        # SÉCURITÉ : forcé sur 127.0.0.1, jamais 0.0.0.0, pour ce serveur vulnérable.
+        # Contrairement au serveur principal, aucune exposition réseau n'est tolérée ici.
+        host = "127.0.0.1"
         port = int(os.environ.get("MCP_PORT", "8001"))
+        print(" SERVEUR VULNÉRABLE : écoute strictement limitée à 127.0.0.1 ")
         mcp.run(transport="http", host=host, port=port)
     else:
         mcp.run()
