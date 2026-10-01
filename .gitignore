@@ -20,3 +20,9 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+template
+build
+.secrets
+.env.*
+output.json

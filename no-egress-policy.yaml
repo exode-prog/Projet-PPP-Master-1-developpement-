@@ -1,0 +1,29 @@
+# NetworkPolicy — Sprint 5, Tâche 4 (no-egress)
+#
+# Preuve de conception : bloque tout trafic sortant du pod de la fonction
+# MCP, sauf le DNS (nécessaire même pour un fonctionnement minimal).
+#
+# LIMITATION CONNUE : cette règle n'est pas appliquée en pratique avec le
+# CNI Flannel (par défaut sur k3s), qui ne supporte pas les NetworkPolicy.
+# Voir docs/no-egress-sprint5.md pour la justification complète.
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mcp-function-no-egress
+  namespace: openfaas-fn
+spec:
+  podSelector:
+    matchLabels:
+      faas_function: mcp-server-function
+  policyTypes:
+    - Egress
+  egress:
+    # Autorise uniquement la résolution DNS (port 53, UDP/TCP)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
