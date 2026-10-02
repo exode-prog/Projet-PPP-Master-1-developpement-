@@ -1,76 +1,42 @@
 """
-Module de validation des JWT émis par Keycloak (Sprint 2 — sécurité applicative).
+Module de journalisation (audit) des appels aux outils du serveur MCP (Sprint 2).
+
+Correction Sprint 6 : ce fichier contenait par erreur une copie du code de
+auth.py (vérification JWT) depuis le commit initial du Sprint 2 ; la fonction
+log_event(), pourtant déjà appelée dans server.py, n'avait jamais été écrite.
+Bug latent non détecté jusqu'au relancement du serveur au Sprint 6.
+
+Limite actuelle assumée : journalise l'outil, les paramètres, le statut et le
+résultat de chaque appel, mais pas encore l'identité de l'appelant (le jeton
+JWT n'est pas encore vérifié au sein de l'exécution des outils eux-mêmes).
 """
 
+import json
 import os
+from datetime import datetime, timezone
 
-import jwt
-from jwt import PyJWKClient
-
-KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", "http://localhost:8080")
-KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM", "mcp-secure-platform")
-KEYCLOAK_CLIENT_ID = os.environ.get("KEYCLOAK_CLIENT_ID", "mcp-target-server")
-
-ISSUER = f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}"
-JWKS_URL = f"{ISSUER}/protocol/openid-connect/certs"
-
-# Le client JWKS met en cache les clés publiques de Keycloak automatiquement
-_jwks_client = PyJWKClient(JWKS_URL)
+AUDIT_LOG_PATH = os.environ.get("AUDIT_LOG_PATH", "audit.log")
 
 
-# ---------------------------------------------------------------------------
-# RÈGLE DE SÉCURITÉ — Interdiction du token passthrough (cahier des charges A.6)
-#
-# Les fonctions de ce module valident UNIQUEMENT les tokens reçus par ce
-# serveur MCP. Elles ne doivent JAMAIS retransmettre un token reçu vers un
-# autre service (API tierce, autre serveur MCP, gateway, etc.).
-#
-# Si un appel sortant vers un autre service nécessite une authentification,
-# ce service doit obtenir SON PROPRE token (ex: via un flow client_credentials
-# dédié), jamais réutiliser le token de l'utilisateur final tel quel.
-# ---------------------------------------------------------------------------
-
-
-class TokenValidationError(Exception):
-    """Levée quand un token JWT est invalide, expiré, ou mal signé."""
-    pass
-
-
-def verify_token(token: str) -> dict:
+def log_event(tool: str, params: dict, status: str, detail) -> None:
     """
-    Vérifie la signature et la validité d'un JWT émis par Keycloak.
-    Retourne le payload décodé si valide, lève TokenValidationError sinon.
+    Enregistre un événement d'audit pour un appel d'outil.
+
+    tool   : nom de l'outil appelé (ex: "hello", "add")
+    params : paramètres fournis par l'appelant
+    status : "success" ou "error"
+    detail : résultat retourné (succès) ou message d'erreur (échec)
     """
-    try:
-        signing_key = _jwks_client.get_signing_key_from_jwt(token)
-        payload = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=["RS256"],
-            issuer=ISSUER,
-            options={"verify_aud": False},  # simplifié pour le Sprint 2
-        )
-        return payload
-    except jwt.ExpiredSignatureError:
-        raise TokenValidationError("Le token a expiré.")
-    except jwt.InvalidTokenError as e:
-        raise TokenValidationError(f"Token invalide : {e}")
+    event = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "tool": tool,
+        "params": params,
+        "status": status,
+        "detail": detail,
+    }
+    line = json.dumps(event, ensure_ascii=False, default=str)
 
+    print(f"[AUDIT] {line}")
 
-def has_role(payload: dict, required_role: str) -> bool:
-    """Vérifie si le token décodé contient le rôle demandé dans realm_access.roles."""
-    roles = payload.get("realm_access", {}).get("roles", [])
-    return required_role in roles
-
-
-def require_role(token: str, required_role: str) -> dict:
-    """
-    Vérifie le token ET le rôle en une seule fonction.
-    Retourne le payload si tout est valide, lève TokenValidationError sinon.
-    """
-    payload = verify_token(token)
-    if not has_role(payload, required_role):
-        raise TokenValidationError(
-            f"Accès refusé : le rôle '{required_role}' est requis."
-        )
-    return payload
+    with open(AUDIT_LOG_PATH, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
