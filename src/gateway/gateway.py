@@ -7,17 +7,28 @@ from fastmcp.server.middleware.rate_limiting import SlidingWindowRateLimitingMid
 # --- Backend ciblé par le routage (serveur cible du Sprint 1-2) ---
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000/mcp")
 
-# --- Configuration Keycloak (identique à auth.py du serveur cible) ---
-KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", "http://localhost:8080")
+# --- Configuration Keycloak ---
+# Deux adresses distinctes sont necessaires car le gateway tourne dans Docker :
+# - KEYCLOAK_INTERNAL_URL : adresse joignable DEPUIS le conteneur gateway (nom
+#   de service Docker), utilisee uniquement pour recuperer les cles JWKS.
+# - KEYCLOAK_PUBLIC_URL : adresse utilisee par les clients EXTERNES (hote,
+#   scripts de test) pour obtenir un jeton. C'est cette adresse qui apparait
+#   dans le champ "iss" (issuer) du jeton, donc c'est elle qui doit etre
+#   utilisee pour la verification de l'issuer, sous peine de rejet systematique
+#   ("invalid_token") meme avec un jeton par ailleurs valide.
+KEYCLOAK_INTERNAL_URL = os.environ.get("KEYCLOAK_INTERNAL_URL", "http://keycloak:8080")
+KEYCLOAK_PUBLIC_URL = os.environ.get("KEYCLOAK_PUBLIC_URL", "http://localhost:8080")
 KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM", "mcp-secure-platform")
-ISSUER = f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}"
+
+ISSUER = f"{KEYCLOAK_PUBLIC_URL}/realms/{KEYCLOAK_REALM}"
+JWKS_URI = f"{KEYCLOAK_INTERNAL_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/certs"
 
 # Le gateway vérifie lui-même chaque jeton JWT entrant (signature, expiration,
 # issuer) avant de relayer quoi que ce soit au serveur cible. Conformément à la
 # règle anti-passthrough (cahier des charges A.6), ce jeton n'est PAS retransmis
 # tel quel au backend : seule l'identité vérifiée ici fera foi (quotas, étape 4).
 auth = JWTVerifier(
-    jwks_uri=f"{ISSUER}/protocol/openid-connect/certs",
+    jwks_uri=JWKS_URI,
     issuer=ISSUER,
     algorithm="RS256",
 )

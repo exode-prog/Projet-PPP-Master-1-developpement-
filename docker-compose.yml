@@ -1,0 +1,94 @@
+# docker-compose PRINCIPAL du projet (Sprints 1-2 et 6 : socle + gateway).
+#
+# Ne contient JAMAIS le serveur volontairement vulnerable (voir
+# docker-compose.vulnerable.yml et docker-compose.vulnerable-hardened.yml,
+# qui doivent rester lances separement, de maniere deliberee et controlee).
+# Le compose LocalStack (Sprint 5, architecture serverless) reste egalement
+# separe, son cycle de vie (fonctions ephemeres) etant d'une nature differente.
+#
+# Lancement : docker compose up -d
+# Reproduit automatiquement la configuration Keycloak (royaume, client, role,
+# utilisateur de test) via le service keycloak-init - aucune etape manuelle.
+
+services:
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: keycloak
+    command: start-dev
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 15s
+    networks:
+      - mcp-net
+
+  keycloak-init:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: mcp-keycloak-init
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    volumes:
+      - ./scripts/keycloak_init.sh:/tmp/keycloak_init.sh:ro
+    entrypoint: ["bash", "/tmp/keycloak_init.sh"]
+    environment:
+      - KC_URL=http://keycloak:8080
+      - KC_ADMIN_USER=admin
+      - KC_ADMIN_PASSWORD=admin
+    restart: "no"
+    networks:
+      - mcp-net
+
+  target-server:
+    build:
+      context: .
+      dockerfile: src/target_server/Dockerfile
+    container_name: mcp-target-server
+    depends_on:
+      keycloak-init:
+        condition: service_completed_successfully
+    environment:
+      - MCP_TRANSPORT=http
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8000
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=mcp-secure-platform
+      - KEYCLOAK_CLIENT_ID=mcp-target-server
+    restart: unless-stopped
+    networks:
+      - mcp-net
+
+  gateway:
+    build:
+      context: .
+      dockerfile: src/gateway/Dockerfile
+    container_name: mcp-gateway
+    depends_on:
+      - target-server
+    environment:
+      - BACKEND_URL=http://target-server:8000/mcp
+      - KEYCLOAK_INTERNAL_URL=http://keycloak:8080
+      - KEYCLOAK_PUBLIC_URL=http://localhost:8080
+      - KEYCLOAK_REALM=mcp-secure-platform
+      - MCP_TRANSPORT=http
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=9000
+      - QUOTA_MAX_CALLS=5
+      - QUOTA_WINDOW_MINUTES=1
+    ports:
+      - "127.0.0.1:9000:9000"
+    restart: unless-stopped
+    networks:
+      - mcp-net
+
+networks:
+  mcp-net:
+    driver: bridge

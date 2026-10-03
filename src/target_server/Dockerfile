@@ -15,6 +15,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copie du code du serveur
 COPY src/target_server/ ./src/target_server/
 
+# Le dossier de travail appartient a root apres les etapes precedentes (WORKDIR,
+# COPY). On le confie a appuser avant de basculer dessus, pour que le serveur
+# puisse ecrire son journal d'audit (audit.log, chemin relatif a /app).
+RUN chown -R appuser:appuser /app
+
 # Bascule vers l'utilisateur non privilégié pour l'exécution
 USER appuser
 
