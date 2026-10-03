@@ -31,6 +31,18 @@ C'est la technologie qui fait fonctionner AWS Lambda et AWS Fargate à grande é
 | Cas d'usage typique | Renforcement de conteneurs existants sans changer l'architecture (Google Cloud Run, GKE Sandbox) | Isolation multi-tenant à très grande échelle pour du serverless (AWS Lambda, Fargate) |
 | Intégration Docker | Native via runtime alternatif | Nécessite un orchestrateur dédié (Firecracker n'est pas un runtime OCI direct) |
 
+## Mesures réelles effectuées sur ce projet (2026-10-03)
+
+Le tableau ci-dessus synthétise des caractéristiques générales de l'industrie (gVisor vs Firecracker). En complément, une mesure empirique réelle a été effectuée sur ce projet, comparant le serveur vulnérable du Sprint 3 exécuté en conteneur standard (`docker-compose.vulnerable.yml`) et sa version durcie sous gVisor (`docker-compose.vulnerable-hardened.yml`) — protocole et preuves complètes dans `docs/demo-attaque-contenue.md` :
+
+| Indicateur | Conteneur standard | Conteneur gVisor (`runsc`) |
+|---|---|---|
+| Cold-start | 6,43 s | 7,31 s (+14 %) |
+| CPU à l'idle | 0,37 % | 6,77 % |
+| RAM à l'idle | 64,22 MiB | 92,19 MiB |
+
+Firecracker n'ayant jamais été installé dans ce projet (voir justification ci-dessous), aucune troisième colonne mesurée n'est présentée : plutôt que d'inventer des chiffres non vérifiés, cette limitation est assumée explicitement, et la comparaison avec Firecracker reste fondée sur des valeurs de référence publiques (notamment son temps de démarrage ~125 ms, largement documenté par AWS).
+
 ## Pourquoi gVisor a été retenu pour ce projet
 
 1. **Intégration immédiate avec Docker** : gVisor s'active simplement avec `--runtime=runsc` ou `runtime: runsc` dans un docker-compose, sans reconfiguration profonde de l'infrastructure existante (validé aux Sprints 1 à 3 de ce projet).

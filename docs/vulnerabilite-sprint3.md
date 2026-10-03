@@ -50,5 +50,7 @@ Plutôt que de corriger le code, ce projet démontre une **isolation au niveau i
 ## Statut
 
 - [x] Vulnérabilité implémentée (Sprint 3)
-- [ ] Exploitation testée sans protection (Sprint 3, Tâche 3)
-- [ ] Neutralisation validée avec gVisor (Sprint 4)
+- [x] Exploitation testée sans protection (Sprint 3, Tâche 3)
+- [x] Neutralisation validée avec gVisor (Sprint 4)
+
+Preuve complète (cold-start, consommation de ressources, capacités Linux effectives avant/après, tentatives de persistance) : voir `docs/demo-attaque-contenue.md`, rejouée et capturée le 2026-10-03 lors de l'intégration finale du projet.
