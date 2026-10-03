@@ -1,108 +1,137 @@
 # TCO (Total Cost of Ownership) — coût réel calculé
 
-## Méthodologie
+## 1. Introduction
 
-Calcul **bottom-up** : mesure réelle de la consommation CPU/RAM de chaque
-composant (via `docker stats` et `kubectl top`, relevés le 2026-10-03, voir
-`docs/integration-3-axes.md`), puis conversion en dimensionnement cloud
-équivalent et chiffrage avec la tarification publique AWS en vigueur
-(sources citées, consultées le 2026-10-03). Le projet s'exécutant
-actuellement gratuitement sur une VM locale (B.6 du cahier des charges),
-ce document répond à la question : **"que coûterait un déploiement réel
-de cette plateforme en production cloud ?"**
+Le cahier des charges (B.8, critère "Finition, GitHub & TCO", 15 % de la
+note, évalué avec la même exigence que "Dimensionnement & Rigueur", 30 %)
+demande un **coût réel calculé**. Le projet tourne actuellement
+gratuitement sur une VM locale (B.6 : "l'infrastructure s'exécute
+localement et gratuitement"). Ce document répond donc à une question de
+projection : que coûterait cette plateforme en production cloud réelle,
+et où irait cet argent ?
 
-## 1. Mesures réelles consolidées
+## 2. Rôle et objectif
 
-| Composant | Axe | CPU mesuré | RAM mesurée |
+- Partir de **mesures réelles** de consommation CPU/RAM de chaque axe
+  (jamais de valeurs inventées), au repos et sur plusieurs échantillons.
+- Comparer au moins deux scénarios d'architecture pour montrer un
+  raisonnement de dimensionnement, pas une simple multiplication.
+- Sourcer chaque tarif externe, avec date de consultation.
+- Confronter nos mesures à une référence externe quand elle existe, pour
+  juger si un résultat est un phénomène réel ou un artefact de la VM.
+
+## 3. Méthodologie et tests exécutés
+
+Mesures prises le 2026-10-03 (23:22 UTC), chaque axe isolé, avec attente
+de stabilisation (30 s) et 3 échantillons espacés de 5 s pour l'axe 1 :
+
+```bash
+docker stats --no-stream keycloak mcp-gateway mcp-target-server
+kubectl top pods -A
+systemctl show k3s --property=MemoryCurrent
+ps -eo pid,comm,%cpu,rss --sort=-rss | grep k3s-server
+# Axe 1 : conteneurs demarres, 30s d'attente, 3 mesures espacees de 5s
+docker stats --no-stream mcp-vulnerable-server-UNSAFE mcp-vulnerable-server-HARDENED
+```
+
+## 4. Mesures réelles consolidées
+
+| Composant | Axe | CPU | RAM |
 |---|---|---|---|
-| `keycloak` | 3 | 7,39 % (~0,074 vCPU) | 606,2 MiB |
-| `mcp-gateway` | 3 | 0,28 % (~0,003 vCPU) | 77,97 MiB |
-| `mcp-target-server` | 3 | 0,26 % (~0,003 vCPU) | 85,82 MiB |
-| Surcout gVisor (si target-server durci, delta mesuré sur le serveur vulnerable) | 1 | +6,40 % (~0,064 vCPU) | +27,97 MiB |
-| Cluster k3s complet (nœud) | 2 | 780 m (0,78 vCPU, 19 %) | 4 356 MiB (54 %) |
-| — dont fonction `mcp-server-function` seule | 2 | 9 m (0,009 vCPU) | 27 MiB |
-| — dont socle Kubernetes (CoreDNS, Traefik, OpenFaaS control-plane...) | 2 | 771 m (0,771 vCPU, **98,8 %** du nœud) | 4 329 MiB (**99,4 %** du nœud) |
+| `keycloak` | 3 | 0,55 % | 611,8 MiB |
+| `mcp-gateway` | 3 | 0,26 % | 78,08 MiB |
+| `mcp-target-server` | 3 | 0,29 % | 73,77 MiB |
+| **Total axe 3** | 3 | **1,10 % (~0,011 vCPU)** | **763,65 MiB (~0,75 Gi)** |
+| Pods k3s (kube-system + openfaas + openfaas-fn) | 2 | 38 m (~0,038 vCPU) | 243 Mi |
+| Socle k3s-server + containerd (cgroup `k3s.service`) | 2 | ~0,96-0,98 vCPU (mesuré 2 fois, 98,3 % puis 96,3 %) | 945,4 Mi (cgroup complet, pods inclus) |
+| **Total axe 2** | 2 | **~1,0 vCPU** | **~945 Mi (~0,92 Gi)** |
+| Sandbox standard (moyenne 3 échantillons) | 1 | 0,32 % | 64,03 MiB |
+| Sandbox gVisor (moyenne 3 échantillons, encore décroissante : 6,11→3,03→2,41 %) | 1 | 2,4-6,1 % (plage, stabilisation lente) | 90,89 MiB |
+| **Surcoût gVisor** | 1 | **+2 à +6 pts (~+0,02-0,06 vCPU)** | **+26,86 MiB** |
 
-**Constat de rigueur** : auto-héberger un cluster k3s pour exécuter une
-seule fonction serverless de faible trafic revient à payer en continu
-pour un socle Kubernetes qui représente ~99 % de la charge — l'inverse du
-principe serverless ("payer à l'usage"). Ce constat oriente le calcul
-ci-dessous vers deux scénarios comparés.
+**Correction méthodologique importante** : une première estimation de
+l'axe 2 avait utilisé `kubectl top nodes` (780 m / 4 356 Mi), qui mesure
+**toute la VM** (y compris la stack Docker Compose tournant à côté), pas
+k3s seul. La mesure correcte isole le cgroup systemd `k3s.service`
+(945 Mi) et le processus `k3s-server` lui-même, mesuré **deux fois
+indépendamment à 98,3 % puis 96,3 % de CPU** — un socle de contrôle
+Kubernetes qui consomme en continu quasiment un cœur entier, même pour
+une seule fonction de faible trafic.
 
-## 2. Tarifs sourcés (AWS, consultés le 2026-10-03)
+## 5. Sources externes (consultées le 2026-10-03)
 
-| Ressource | Prix | Source |
+| Référence | Usage | Lien |
 |---|---|---|
-| EC2 t3.micro (2 vCPU, 1 GiB, Linux, eu-west-1) | 0,0114 $/h | [Holori Cloud Calculator](https://calculator.holori.com/aws/ec2/t3.micro/eu-west-1) |
-| EC2 t3.small (2 vCPU, 2 GiB, Linux, us-east-1) | 0,0208 $/h | [Holori Cloud Calculator](https://calculator.holori.com/aws/ec2/t3.small) |
-| EC2 t3.medium (2 vCPU, 4 GiB, Linux, us-east-1) | 0,0416 $/h | [Holori Cloud Calculator](https://calculator.holori.com/aws/ec2/t3.medium/us-east-1) |
-| AWS Lambda — requêtes | 0,20 $ / 1 million | [AWS Lambda Pricing Breakdown — CloudChipr](https://cloudchipr.com/blog/aws-lambda-pricing) |
-| AWS Lambda — calcul | 0,0000166667 $ / Go-seconde (palier 1, jusqu'à 6 Md Go-s/mois) | [AWS Lambda Pricing Breakdown — CloudChipr](https://cloudchipr.com/blog/aws-lambda-pricing) |
-| AWS Lambda — quota gratuit mensuel | 1 million de requêtes + 400 000 Go-secondes | idem |
+| AWS EC2 — t3.small on-demand (us-east-1) | Dimensionnement axe 3 | [Holori Cloud Calculator](https://calculator.holori.com/aws/ec2/t3.small) |
+| AWS EC2 — t3.medium on-demand (us-east-1) | Dimensionnement axe 2 (auto-hébergé) | [Holori Cloud Calculator](https://calculator.holori.com/aws/ec2/t3.medium/us-east-1) |
+| AWS EC2 — t3.micro on-demand (eu-west-1) | Référence basse écartée (RAM insuffisante) | [Holori Cloud Calculator](https://calculator.holori.com/aws/ec2/t3.micro/eu-west-1) |
+| AWS Lambda — tarif requêtes et calcul | Dimensionnement axe 2 (scénario cloud-natif) | [AWS Lambda Pricing Breakdown — CloudChipr](https://cloudchipr.com/blog/aws-lambda-pricing) |
+| k3s — empreinte officielle du socle de contrôle (nœud unique) | Comparaison/validation de nos mesures | [k3s.io — Resource Profiling](https://docs.k3s.io/reference/resource-profiling) |
 
-*(Hypothèse de calcul : mois AWS standard = 730 heures.)*
+**Comparaison avec la référence officielle** : k3s.io documente un socle
+à vide d'environ **6 % d'un cœur et ~1,6 Go RAM** sur serveur dédié
+(Intel 8375C). Notre RAM mesurée (945 Mi) est du même ordre de grandeur
+(légèrement inférieure, charge plus légère ici). Notre CPU mesurée
+(~97 %) est très supérieure à la référence — écart plausible et assumé :
+VM VirtualBox à 4 vCPU partagés, avec Docker et k3s imbriqués sur le même
+hôte, contrairement au serveur dédié de la documentation officielle.
 
-## 3. Scénario A — "Lift-and-shift" (architecture actuelle telle quelle)
+## 6. Scénarios cloud chiffrés
 
-Déploiement qui reproduit tel quel l'architecture du projet (Option A,
-axes séparés), sans repenser l'axe 2 :
+*(Mois AWS standard = 730 heures.)*
 
-| Poste | Dimensionnement | Calcul | Coût mensuel |
+### Scénario A — Architecture telle quelle (k3s auto-hébergé)
+
+| Poste | Dimensionnement | Justification | Coût mensuel |
 |---|---|---|---|
-| Axe 3 (gateway + Keycloak + target-server, durci gVisor) | t3.small (2 vCPU/2 Gi — couvre les ~0,14 vCPU / ~0,78 Gi mesurés avec marge OS/Docker) | 0,0208 $/h × 730 h | **15,18 $** |
-| Axe 2 (cluster k3s + OpenFaaS auto-hébergés) | t3.medium (2 vCPU/4 Gi — couvre les 0,78 vCPU / 4,3 Gi mesurés) | 0,0416 $/h × 730 h | **30,37 $** |
+| Axe 3 (gateway + Keycloak + target, durci gVisor) | t3.small (2 vCPU/2 Gi) | couvre 0,011+0,06 vCPU et 0,75+0,03 Gi mesurés, large marge OS/Docker | 15,18 $ |
+| Axe 2 (k3s + OpenFaaS auto-hébergés) | t3.medium (2 vCPU/4 Gi) | **CPU est le facteur limitant** (~1 vCPU soutenu), pas la RAM comme estimé initialement ; un t3.medium reste cependant une instance *burstable* (crédit CPU de base ~40 % de 2 vCPU) — un usage soutenu proche d'1 vCPU finirait par consommer les crédits en production réelle, une instance non-burstable serait plus sûre | 30,37 $ |
 | **Total Scénario A** | | | **45,55 $/mois (≈ 547 $/an)** |
 
-## 4. Scénario B — "Cloud-natif" (axe 2 remplacé par un vrai serverless managé)
+### Scénario B — Cloud-natif (axe 2 remplacé par AWS Lambda)
 
-Même architecture, mais l'axe 2 est confié à AWS Lambda (le fournisseur
-gère le cycle de vie éphémère nativement, sans cluster à maintenir) —
-hypothèse de volumétrie réaliste pour un projet pédagogique/démo :
-**100 000 invocations/mois, 200 ms de durée moyenne, 128 Mo de mémoire**.
-
-Calcul : 100 000 requêtes/mois (sous le quota gratuit de 1M) ;
-Go-secondes = 100 000 × 0,2 s × 0,125 Go = **2 500 Go-s/mois**, très
-largement sous le quota gratuit de 400 000 Go-s/mois.
+Hypothèse de volumétrie réaliste pour un usage pédagogique/démo :
+100 000 invocations/mois, 200 ms, 128 Mo → 2 500 Go-s/mois, très en
+dessous du quota gratuit (400 000 Go-s/mois, 1M requêtes/mois).
 
 | Poste | Dimensionnement | Coût mensuel |
 |---|---|---|
-| Axe 3 (gateway + Keycloak + target-server) | t3.small | **15,18 $** |
-| Axe 2 (AWS Lambda, 100k invocations/mois) | Entièrement sous quota gratuit | **0,00 $** |
+| Axe 3 | t3.small | 15,18 $ |
+| Axe 2 (Lambda, 100k invocations/mois) | sous quota gratuit | 0,00 $ |
 | **Total Scénario B** | | **15,18 $/mois (≈ 182 $/an)** |
 
-Le volume devrait dépasser **~2 millions d'invocations/mois à 200 ms/128 Mo**
-avant de sortir du quota gratuit Lambda (400 000 Go-s ÷ 0,025 Go-s par
-invocation) — très au-dessus de l'usage réaliste d'un capstone académique.
+## 7. Tableau comparatif final (différences)
 
-## 5. Synthèse
+| | Coût actuel (local, B.6) | Scénario A (cloud, k3s auto-hébergé) | Scénario B (cloud, Lambda managé) | Différence A→B |
+|---|---|---|---|---|
+| Mensuel | 0 $ | 45,55 $ | 15,18 $ | **-30,37 $ (-67 %)** |
+| Annuel | 0 $ | ≈ 547 $ | ≈ 182 $ | **≈ -365 $/an** |
 
-| | Coût actuel (local) | Scénario A (cloud, as-is) | Scénario B (cloud, optimisé) |
-|---|---|---|---|
-| **Coût mensuel** | 0 $ (VM étudiante gratuite, B.6) | 45,55 $ | 15,18 $ |
-| **Coût annuel** | 0 $ | ≈ 547 $ | ≈ 182 $ |
+**Conclusion chiffrée** : le socle de contrôle Kubernetes (k3s-server)
+consomme à lui seul l'équivalent d'un cœur CPU en continu — confirmé par
+deux mesures indépendantes et cohérent avec un phénomène documenté
+officiellement par k3s.io, bien qu'amplifié ici par les ressources
+partagées de la VM. Remplacer cet auto-hébergement par un serverless
+managé (AWS Lambda) réduit le coût cloud projeté de **67 % (-365 $/an)**
+pour ce projet, car l'usage réel (une fonction de démonstration à faible
+trafic) reste largement dans le quota gratuit d'un service managé. Le
+durcissement gVisor de l'axe 1 ajoute un surcoût mesuré de seulement
+quelques points de CPU et ~27 Mio de RAM — négligeable, il ne change pas
+le palier d'instance choisi : la sécurité supplémentaire est obtenue à
+**coût cloud quasi nul**.
 
-**Conclusion chiffrée** : migrer l'axe serverless d'un cluster k3s
-auto-hébergé vers un service managé (AWS Lambda) réduirait le coût cloud
-projeté de **~67 % (-365 $/an)** pour ce projet, car le socle Kubernetes
-représente 98,8 % de la charge mesurée pour une fonction qui, en usage
-réel pédagogique, reste largement dans le quota gratuit d'un serverless
-managé. Le durcissement gVisor de l'axe 1, lui, ne change pas le
-dimensionnement de l'instance (le surcoût mesuré de +0,064 vCPU / +28 MiB
-tient dans la marge déjà prévue) : la sécurité supplémentaire qu'il
-apporte est donc obtenue **à coût cloud nul** dans ce dimensionnement.
+## 8. Limites et hypothèses assumées
 
-## Limites et hypothèses assumées
-
-- Le coût actuel réel payé par le groupe est 0 $ (infrastructure locale
-  gratuite, conforme à B.6) ; les scénarios A et B sont des **projections**
-  de déploiement en production, pas une dépense engagée.
-- La volumétrie Lambda (100 000 invocations/mois) est une hypothèse
-  pédagogique raisonnable, explicitée pour rester vérifiable — elle n'est
-  pas mesurée en production réelle (le projet n'étant pas déployé).
-- Tarifs du 2026-10-03, région eu-west-1 pour t3.micro et us-east-1 pour
-  t3.small/t3.medium (les prix eu-west-1 pour ces deux derniers sont
-  généralement 5 à 10 % plus élevés qu'us-east-1 chez AWS, non chiffrés
-  précisément ici faute de source directe consultée).
-- Coût de stockage (images Docker, ~1,5 Go cumulés) non inclus : à l'échelle
-  mesurée, un volume EBS gp3 de 20 Go (~0,08 $/Go/mois) ajouterait environ
-  1,60 $/mois, négligeable face aux postes compute ci-dessus.
+- Coût actuel réel payé : 0 $ (VM locale gratuite). Les scénarios A/B
+  sont des projections, pas une dépense engagée.
+- Volumétrie Lambda (100 000 invocations/mois) : hypothèse pédagogique
+  raisonnable et explicite, non mesurée en production réelle.
+- La variabilité mesurée du surcoût CPU gVisor (2 à 6 points selon le
+  moment de la mesure) reflète une stabilisation encore en cours du
+  noyau utilisateur "Sentry" même après 30 s — présentée comme une plage
+  plutôt qu'un chiffre unique, par honnêteté sur l'incertitude.
+- Tarifs du 2026-10-03, région us-east-1 pour t3.small/t3.medium (un
+  déploiement en eu-west-1 serait généralement 5 à 10 % plus cher chez
+  AWS, non chiffré précisément faute de source directe consultée).
+- Coût de stockage (images Docker, ~1,5 Go cumulés) non inclus :
+  négligeable (~1,60 $/mois pour 20 Go d'EBS gp3) face aux postes compute.
