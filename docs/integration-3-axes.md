@@ -60,26 +60,40 @@ complet : `docs/demo-attaque-contenue.md`.
 - **k3s** : un nœud `control-plane`, actif depuis 2j12h, sain.
 - **OpenFaaS** : déployé dans les namespaces `openfaas`/`openfaas-fn`,
   fonction `mcp-server-function` (template `python3-http`) en cours
-  d'exécution. Testée en direct via le NodePort `31112` :
-  réponse HTTP 200, `{"message": "Fonction serverless MCP active", ...}`.
-  Le handler (`build/mcp-server-function/function/handler.py`) démontre le
-  principe du cycle de vie éphémère (spawn à la demande, réponse, scale-to-
-  zero géré par OpenFaaS) — **c'est une preuve de concept du mécanisme
-  serverless, pas un relais complet vers un serveur MCP** : le code renvoie
-  une confirmation statique plutôt que de proxyfier une vraie session MCP.
-  Le docstring du handler ("transmet la requête au serveur MCP interne")
-  est à ce titre plus ambitieux que l'implémentation réelle ; ce document
-  corrige cette description pour rester fidèle au code.
+  d'exécution. Testée en direct via le NodePort `31112`, en CLI (`curl`)
+  et en GUI (portail web OpenFaaS, authentification basique) : réponse
+  HTTP 200, `{"message": "Fonction serverless MCP active", ...}`. Le
+  handler (`build/mcp-server-function/function/handler.py`) démontre le
+  principe du déploiement et de l'invocation serverless — **c'est une
+  preuve de concept du mécanisme serverless, pas un relais complet vers un
+  serveur MCP** : le code renvoie une confirmation statique plutôt que de
+  proxyfier une vraie session MCP. Le docstring du handler ("transmet la
+  requête au serveur MCP interne") est à ce titre plus ambitieux que
+  l'implémentation réelle ; ce document corrige cette description pour
+  rester fidèle au code.
+- **Scale-to-zero sur OpenFaaS : non disponible.** C'est une
+  fonctionnalité réservée à l'édition Pro (confirmé par la documentation
+  officielle), reconfirmé empiriquement le 2026-10-04 : le déploiement
+  tourne en continu depuis 3 jours sans interruption (`kubectl get
+  deploy`), aucun scale-down observé. Une alternative, Knative, a été
+  testée et abandonnée pour un bug DNS chronique et bloquant
+  (`activator` → `autoscaler`). Le projet retient donc un cycle de vie
+  **manuel** via `spawn.sh`/`teardown.sh` (scale 0 ↔ 1) pour l'axe 2
+  principal. Détail complet, tableau comparatif et causes racines :
+  `docs/axe2-scale-to-zero.md`.
 - **NetworkPolicy no-egress** : définie (`no-egress-policy.yaml`) mais
   **non appliquée en pratique**, le CNI Flannel par défaut de k3s ne
   supportant pas les NetworkPolicy. Limitation assumée et documentée dans
   `docs/no-egress-sprint5.md` (Calico/Cilium aurait permis l'application
   réelle, mais l'isolation réseau du projet repose déjà sur la séparation
   des réseaux Docker de l'axe 1, jugée suffisante pour la démonstration).
-- **LocalStack** : conteneur `localstack-mcp` actuellement arrêté
-  (`Exited (255)`, 2 jours). Composant secondaire de l'axe 2 (émulation de
-  services cloud AWS) ; le cycle de vie éphémère est démontré principalement
-  via OpenFaaS, qui reste l'élément fonctionnel validé.
+- **LocalStack (preuve complémentaire du cycle éphémère automatique)** :
+  à la différence d'OpenFaaS, LocalStack (émulation du runtime AWS Lambda)
+  démontre un cycle de vie réellement automatique et sans intervention
+  manuelle — conteneur créé à l'invocation, détruit tout seul après
+  inactivité, confirmé empiriquement par observation directe
+  (`docker ps` avant/après + `watch`). Protocole complet et résultats :
+  `docs/axe2-scale-to-zero.md`.
 
 ### Axe 3 — Gateway et orchestration
 
