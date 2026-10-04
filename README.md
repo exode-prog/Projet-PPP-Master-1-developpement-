@@ -199,6 +199,7 @@ docker compose -f docker-compose.vulnerable-hardened.yml down
 | `demo-ollama.md` | Démonstration Ollama/ollmcp comme hôte MCP autonome |
 | `no-egress-sprint5.md` | Limitation connue de la NetworkPolicy k3s |
 | `integration-3-axes.md` | Comment les 3 axes s'articulent (architecture Option A) |
+| `axe2-scale-to-zero.md` | Investigation scale-to-zero (OpenFaaS vs Knative vs LocalStack), causes racines |
 | `tco.md` | Calcul du cout reel (TCO), sourcé |
 | `sprint7-finalisation.md` | Synthese du sprint de finalisation |
 
