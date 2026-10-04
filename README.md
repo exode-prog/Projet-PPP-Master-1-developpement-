@@ -77,24 +77,23 @@ Un test **[GUI]** complémentaire est possible, mais seulement comme démonstrat
 
 ### Étape 6 — Installer gVisor (prérequis axe 1)
 
+**Note (testé le 2026-10-04) :** l'ancien téléchargement manuel du binaire `runsc` seul (`storage.googleapis.com/.../release/latest/`) ne fonctionne plus — gVisor a changé son format de distribution (le binaire seul ne suffit plus, il lui faut des "sidecar binaries" désormais fournis séparément). La méthode par dépôt APT ci-dessous est la méthode officielle recommandée et a été testée avec succès :
+
 ```bash
-(
-  set -e
-  ARCH=$(uname -m)
-  URL=https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH}
-  wget ${URL}/runsc ${URL}/runsc.sha512 \
-    ${URL}/containerd-shim-runsc-v1 ${URL}/containerd-shim-runsc-v1.sha512
-  sha512sum -c runsc.sha512 -c containerd-shim-runsc-v1.sha512
-  rm -f *.sha512
-  chmod a+rx runsc containerd-shim-runsc-v1
-  sudo mv runsc containerd-shim-runsc-v1 /usr/local/bin
-)
-sudo runsc install   # enregistre automatiquement le runtime "runsc" dans Docker
-sudo systemctl restart docker
+sudo apt-get update && sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
+
+curl -fsSL https://gvisor.dev/archive.key | sudo gpg --yes --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" | sudo tee /etc/apt/sources.list.d/gvisor.list > /dev/null
+
+sudo apt-get update && sudo apt-get install -y runsc
+sudo runsc install   # enregistre automatiquement le runtime "runsc" dans Docker (ne pas utiliser /usr/local/bin/runsc : le paquet apt installe dans /usr/bin, contrairement à ce qu'indique la doc officielle)
+sudo systemctl reload docker
+
+docker run --rm --runtime=runsc hello-world   # preuve fonctionnelle, pas seulement listée
 docker info | grep -A2 Runtimes   # doit lister "runsc"
 ```
 
-Source officielle : https://gvisor.dev/docs/user_guide/install/
+Source officielle : https://gvisor.dev/docs/user_guide/install
 
 ### Étape 7 — Démo sandbox : axe 1, standard vs gVisor **[CLI + GUI]**
 
@@ -305,6 +304,7 @@ Par souci de transparence (et conformément à la méthodologie du projet : vér
 | Variabilité de mesure du cold-start gVisor | Trois mesures indépendantes ont donné des écarts importants (6,8 % à 120 % de surcoût CPU) selon le délai avant mesure | Présenté honnêtement comme une plage et non un chiffre unique, avec la cause probable documentée (`docs/tco.md`) plutôt qu'un chiffre choisi arbitrairement |
 | Champ Headers non persistant dans MCP Inspector | Le champ existe bien (recherché et confirmé, contrairement à une hypothèse initiale erronée) mais sa valeur n'est pas sauvegardée entre rechargements de page | Authentification documentée comme test CLI obligatoire (`curl`) ; GUI utilisable seulement en démonstration ponctuelle |
 | Proxy serverless incomplet | Le handler OpenFaaS renvoie une confirmation statique plutôt que de relayer une vraie session MCP, alors que son docstring initial le suggérait | Docstring corrigé pour rester fidèle au code ; portée du test clarifiée comme preuve de concept du mécanisme serverless, pas une intégration fonctionnelle axe 1/2/3 |
+| Installation gVisor obsolète dans le README initial | Le téléchargement manuel du binaire `runsc` seul (404 sur l'ancienne URL) ne fonctionne plus ; la doc officielle elle-même indique un chemin incorrect (`/usr/local/bin/runsc` au lieu de `/usr/bin/runsc` réellement utilisé par le paquet apt) | Détecté lors du test de reproductibilité complet sur un clone neuf (`docs/README : méthode APT substituée, chemin corrigé après vérification avec `dpkg -L runsc` et test fonctionnel réel (`docker run --runtime=runsc hello-world`) |
 
 ## Roadmap (les sprints)
 
