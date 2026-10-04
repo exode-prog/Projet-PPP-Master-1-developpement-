@@ -119,9 +119,18 @@ Protocole complet et résultats de référence : `docs/demo-attaque-contenue.md`
 
 ```bash
 curl -sfL https://get.k3s.io | sh -
+
 curl -sLS https://get.arkade.dev | sh
+# Si l'installation automatique dans /usr/local/bin echoue (permissions), repli manuel :
+sudo cp arkade /usr/local/bin/arkade
+sudo ln -sf /usr/local/bin/arkade /usr/local/bin/ark
+rm -f arkade
+arkade version   # verifier que la commande est bien disponible
+
 arkade install openfaas
 ```
+
+> Si OpenFaaS est deja installe sur le cluster (reinstallation), `arkade install openfaas` peut echouer avec une erreur Helm du type `cannot patch "openfaas-prometheus" ... roleRef: cannot change roleRef` (contrainte d'immuabilite RBAC Kubernetes sur `RoleBinding.roleRef`). Ceci n'affecte pas une premiere installation sur machine vierge. En cas d'echec sur une installation existante : `helm history openfaas -n openfaas` puis `helm rollback openfaas <revision precedente> -n openfaas`.
 
 ### Étape 9 — Démo serverless : axe 2 **[CLI + GUI]**
 
@@ -305,6 +314,8 @@ Par souci de transparence (et conformément à la méthodologie du projet : vér
 | Champ Headers non persistant dans MCP Inspector | Le champ existe bien (recherché et confirmé, contrairement à une hypothèse initiale erronée) mais sa valeur n'est pas sauvegardée entre rechargements de page | Authentification documentée comme test CLI obligatoire (`curl`) ; GUI utilisable seulement en démonstration ponctuelle |
 | Proxy serverless incomplet | Le handler OpenFaaS renvoie une confirmation statique plutôt que de relayer une vraie session MCP, alors que son docstring initial le suggérait | Docstring corrigé pour rester fidèle au code ; portée du test clarifiée comme preuve de concept du mécanisme serverless, pas une intégration fonctionnelle axe 1/2/3 |
 | Installation gVisor obsolète dans le README initial | Le téléchargement manuel du binaire `runsc` seul (404 sur l'ancienne URL) ne fonctionne plus ; la doc officielle elle-même indique un chemin incorrect (`/usr/local/bin/runsc` au lieu de `/usr/bin/runsc` réellement utilisé par le paquet apt) | Détecté lors du test de reproductibilité complet sur un clone neuf (`docs/README : méthode APT substituée, chemin corrigé après vérification avec `dpkg -L runsc` et test fonctionnel réel (`docker run --runtime=runsc hello-world`) |
+| Installation arkade incomplète | Le script d'installation telecharge le binaire mais echoue parfois a l'installer dans /usr/local/bin (permissions), laissant la commande introuvable | Repli manuel documente a l'Étape 8 (copie + lien symbolique), confirme fonctionnel lors du test de reproductibilite |
+| Réinstallation OpenFaaS en conflit RBAC | Reinstaller OpenFaaS sur un cluster ou il est deja deploye declenche un upgrade Helm qui echoue (contrainte d'immuabilite sur le roleRef d'un RoleBinding), laissant des pods en CrashLoopBackOff en parallele des pods stables | Diagnostique via l'historique Helm et l'etat des pods (pas de supposition), corrige par un rollback Helm vers la revision stable precedente (5 pods Running restaures) ; n'invalide pas la commande pour une premiere installation sur machine vierge |
 
 ## Roadmap (les sprints)
 
