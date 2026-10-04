@@ -15,9 +15,11 @@ Partie B — Spécialité Virtualisation et Cloud :
 
 Démonstration centrale du projet : scénario "attaque contenue" — un serveur MCP volontairement vulnérable est attaqué sans protection (compromission totale), puis avec la plateforme activée (attaque bloquée et contenue). Détail complet : `docs/demo-attaque-contenue.md`.
 
-## Démarrage rapide — Lancer la plateforme
+## Démarrage rapide — reproduire exactement le même environnement
 
-Ces étapes supposent une machine Linux (Ubuntu recommandé) avec Docker déjà installé. Suivre l'ordre : chaque étape dépend de la précédente.
+Ces étapes partent d'une machine Linux (Ubuntu recommandé) **sans aucun prérequis déjà installé**. Chaque étape donne la commande d'installation si l'outil est absent, puis la commande de vérification. Suivre l'ordre : chaque étape dépend de la précédente.
+
+Chaque test est marqué **[CLI]** (ligne de commande, terminal) ou **[GUI]** (interface graphique, navigateur) — certains ont les deux.
 
 ### Étape 1 — Cloner le dépôt
 
@@ -26,25 +28,36 @@ git clone https://github.com/exode-prog/Projet-PPP-Master-1-developpement-.git
 cd Projet-PPP-Master-1-developpement-
 ```
 
-### Étape 2 — Vérifier les prérequis système
+### Étape 2 — Installer Docker
 
 ```bash
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER
+newgrp docker   # ou se déconnecter/reconnecter pour appliquer le groupe
 docker --version
 docker compose version
 ```
 
-Si absent, installer Docker : https://docs.docker.com/engine/install/ubuntu/
+### Étape 3 — Installer Node.js via nvm (nécessaire pour MCP Inspector, tests [GUI])
 
-### Étape 3 — Lancer la plateforme principale (axe 3 : gateway + Keycloak)
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+source ~/.bashrc
+nvm install 22
+node --version
+npm --version
+```
+
+### Étape 4 — Lancer la plateforme principale (axe 3 : gateway + Keycloak)
 
 ```bash
 docker compose up -d
-docker ps   # verifier que keycloak, mcp-gateway, mcp-target-server sont "Up"/"healthy"
+docker ps   # vérifier que keycloak, mcp-gateway, mcp-target-server sont "Up"/"healthy"
 ```
 
 Le premier démarrage initialise automatiquement le royaume Keycloak (`scripts/keycloak_init.sh`), le client `mcp-target-server` et un utilisateur de test (`testuser`). Keycloak met ~20 secondes à devenir `healthy`.
 
-### Étape 4 — Vérifier que l'authentification fonctionne
+### Étape 5 — Tester l'authentification : axe 3 **[CLI obligatoire + GUI optionnel]**
 
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8080/realms/mcp-secure-platform/protocol/openid-connect/token \
@@ -58,41 +71,112 @@ curl -X POST http://127.0.0.1:9000/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
 ```
 
-Une réponse `"serverInfo":{"name":"MCP Gateway - Sprint 6"...}` confirme que l'axe 3 fonctionne.
+Une réponse `"serverInfo":{"name":"MCP Gateway - Sprint 6"...}` confirme que l'axe 3 fonctionne. **Ce test CLI est la preuve retenue et documentée**, car reproductible et scriptable.
 
-### Étape 5 — Démo sandbox (axe 1 : gVisor vs standard)
+Un test **[GUI]** complémentaire est possible, mais seulement comme démonstration ponctuelle : juste après avoir obtenu `$TOKEN` ci-dessus, le coller dans le champ **Headers** de MCP Inspector (`Authorization: Bearer <valeur de $TOKEN>`) avant de se connecter à `http://127.0.0.1:9000/mcp`. Ce champ n'étant pas sauvegardé entre deux rechargements de page, il faut ressaisir le jeton à chaque session — ce qui le rend impropre comme preuve documentée, mais utilisable pour une démo live.
 
-**Prérequis** : gVisor (`runsc`) doit être enregistré comme runtime Docker sur la machine (voir https://gvisor.dev/docs/user_guide/install/) — ce n'est pas installé par ce dépôt, c'est un prérequis système.
+### Étape 6 — Installer gVisor (prérequis axe 1)
+
+```bash
+(
+  set -e
+  ARCH=$(uname -m)
+  URL=https://storage.googleapis.com/gvisor/releases/release/latest/${ARCH}
+  wget ${URL}/runsc ${URL}/runsc.sha512 \
+    ${URL}/containerd-shim-runsc-v1 ${URL}/containerd-shim-runsc-v1.sha512
+  sha512sum -c runsc.sha512 -c containerd-shim-runsc-v1.sha512
+  rm -f *.sha512
+  chmod a+rx runsc containerd-shim-runsc-v1
+  sudo mv runsc containerd-shim-runsc-v1 /usr/local/bin
+)
+sudo runsc install   # enregistre automatiquement le runtime "runsc" dans Docker
+sudo systemctl restart docker
+docker info | grep -A2 Runtimes   # doit lister "runsc"
+```
+
+Source officielle : https://gvisor.dev/docs/user_guide/install/
+
+### Étape 7 — Démo sandbox : axe 1, standard vs gVisor **[CLI + GUI]**
 
 ```bash
 docker compose -f docker-compose.vulnerable.yml up -d
 docker compose -f docker-compose.vulnerable-hardened.yml up -d
 ```
 
-Voir `docs/demo-attaque-contenue.md` pour le protocole complet d'exploitation et de comparaison (injection de commande, `CapEff`, écriture/exécution bloquées sous gVisor).
-
 **Ne jamais lancer ces deux composes en dehors d'un réseau isolé ni les fusionner avec `docker-compose.yml`** — voir `src/vulnerable_server/README.md`.
 
-### Étape 6 — Démo serverless (axe 2 : k3s + OpenFaaS)
+- **[GUI]** Démo via MCP Inspector (voir étape 10 pour le lancement) : exploiter l'injection de commande sur l'outil `ping_host`, comparer serveur sans protection (port 8001) vs serveur durci (port 8002). Payload de test : `127.0.0.1; whoami; id` (compromission) ou `127.0.0.1; cat /proc/version` (preuve d'exposition noyau).
+- **[CLI]** Vérification complémentaire des capacités effectives et de l'exposition noyau :
+```bash
+  docker exec mcp-vulnerable-server-UNSAFE sh -c "cat /proc/1/status | grep CapEff"
+  docker exec mcp-vulnerable-server-HARDENED sh -c "cat /proc/1/status | grep CapEff"
+  docker exec mcp-vulnerable-server-UNSAFE sh -c "cat /proc/version"
+  docker exec mcp-vulnerable-server-HARDENED sh -c "cat /proc/version"
+```
 
-Nécessite k3s et OpenFaaS installés séparément sur la machine (pas fournis par ce dépôt) :
+Protocole complet et résultats de référence : `docs/demo-attaque-contenue.md`.
+
+### Étape 8 — Installer k3s et OpenFaaS (prérequis axe 2)
 
 ```bash
 curl -sfL https://get.k3s.io | sh -
 curl -sLS https://get.arkade.dev | sh
 arkade install openfaas
-export OPENFAAS_URL=http://127.0.0.1:31112
-faas-cli deploy -f stack.yaml
-curl -X POST $OPENFAAS_URL/function/mcp-server-function -d '{}'
 ```
 
-### Étape 7 — Démonstration visuelle (MCP Inspector)
+### Étape 9 — Démo serverless : axe 2 **[CLI + GUI à confirmer]**
+
+- **[CLI]** (preuve retenue et documentée, testée et confirmée) :
+```bash
+  export OPENFAAS_URL=http://127.0.0.1:31112
+  faas-cli deploy -f stack.yaml
+  curl -X POST $OPENFAAS_URL/function/mcp-server-function -d '{}'
+```
+
+- **[GUI]** OpenFaaS fournit en principe un portail web accessible sur l'URL du gateway, permettant de voir les fonctions déployées et de les invoquer avec un payload texte, derrière une authentification basique :
+```bash
+  PASSWORD=$(kubectl get secret -n openfaas basic-auth -o jsonpath="{.data.basic-auth-password}" | base64 --decode)
+  echo "Utilisateur: admin / Mot de passe: $PASSWORD"
+  # Ouvrir http://127.0.0.1:31112/ui/ dans un navigateur et se connecter avec ces identifiants
+```
+  **Ce test GUI n'a pas encore été vérifié sur notre installation** — à exécuter et confirmer avant de le documenter comme preuve retenue (cohérent avec notre méthodologie de vérification avant conclusion).
+
+### Étape 10 — Démonstration visuelle **[GUI]** (MCP Inspector)
 
 ```bash
 npx @modelcontextprotocol/inspector
 ```
 
-Ouvrir l'URL affichée dans un navigateur. Pour tester un serveur protégé par Keycloak, utiliser le champ **Headers** des paramètres de connexion (`Authorization: Bearer <token>`) — ce champ n'est pas sauvegardé entre deux rechargements de page, le ressaisir à chaque session.
+Ouvrir l'URL affichée dans un navigateur, se connecter en Streamable HTTP sur `http://127.0.0.1:8001/mcp` (sans protection) ou `http://127.0.0.1:8002/mcp` (durci gVisor) pour la démo de l'axe 1. Pour l'axe 3, voir la note GUI optionnelle de l'étape 5.
+
+### Étape 11 (optionnelle) — Ollama comme hôte MCP autonome
+
+Complément à MCP Inspector (A.5 du cahier des charges) : un LLM local exécute les appels d'outils à la place d'un humain. Non requis pour valider la plateforme.
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen2.5:3b
+python3 -m venv MCP-PPP
+source MCP-PPP/bin/activate
+pip install mcp-client-for-ollama
+ollmcp -u http://127.0.0.1:8001/mcp -m qwen2.5:3b
+```
+
+Une fois connecté, ollmcp ouvre une invite interactive. Taper la question suivante (en langage naturel, c'est le modèle qui construit lui-même l'appel à l'outil `ping_host`) :
+Peux-tu vérifier si l'hôte 127.0.0.1; whoami; id est joignable ?
+
+Avant d'exécuter quoi que ce soit, ollmcp affiche l'appel d'outil que le modèle a construit et demande une confirmation humaine (HIL — Human-In-the-Loop) :
+Tool call: ping_host
+Arguments: {"hostname": "127.0.0.1; whoami; id"}
+Allow this tool call? [y/n]
+
+Répondre `y` pour autoriser l'exécution (ou `n` pour l'annuler — c'est ce blocage qui matérialise le "consentement explicite de l'utilisateur" exigé par le cahier des charges, partie A.6). Une fois confirmé, la réponse de l'outil s'affiche :
+root
+uid=0(root) gid=0(root) groups=0(root)
+
+Ceci confirme deux choses à la fois : que le modèle a transmis la commande d'injection sans la filtrer (il suit l'instruction de l'utilisateur telle quelle), et que la validation humaine (HIL) intervient bien avant toute exécution réelle — sans ce `y`, la commande n'aurait pas été lancée.
+
+Détail et transcript de référence : `docs/demo-ollama.md`.
 
 ### Tout arrêter proprement
 
@@ -112,6 +196,7 @@ docker compose -f docker-compose.vulnerable-hardened.yml down
 | `vulnerabilite-sprint3.md` | La vulnerabilite CWE-78 du serveur cible |
 | `comparatif-gvisor-firecracker.md` | Comparaison technologique sandbox |
 | `demo-attaque-contenue.md` | Preuve empirique complete du scenario B.2 |
+| `demo-ollama.md` | Démonstration Ollama/ollmcp comme hôte MCP autonome |
 | `no-egress-sprint5.md` | Limitation connue de la NetworkPolicy k3s |
 | `integration-3-axes.md` | Comment les 3 axes s'articulent (architecture Option A) |
 | `tco.md` | Calcul du cout reel (TCO), sourcé |
@@ -119,7 +204,7 @@ docker compose -f docker-compose.vulnerable-hardened.yml down
 
 ## Pour les contributeurs — Configurer son environnement de développement
 
-Chers collègues de EC2LT, suivre ces étapes dans l'ordre pour avoir exactement le même environnement que le reste de l'équipe (dev local, pas nécessaire pour juste lancer la plateforme via Docker ci-dessus).
+Chers collègues de EC2LT : Docker, Node.js et gVisor sont couverts dans "Démarrage rapide" ci-dessus. Les étapes suivantes ne concernent que le développement du code Python du projet (pas nécessaire pour juste lancer et tester la plateforme).
 
 ### 1. Outils système (Ubuntu 24)
 
@@ -137,22 +222,7 @@ pip install --upgrade pip
 pip install fastmcp
 ```
 
-### 3. Node.js via nvm (nécessaire pour MCP Inspector)
-
-```bash
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
-source ~/.bashrc
-nvm install 22
-```
-
-### 4. Ollama et modèle local (optionnel, complément à MCP Inspector)
-
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen2.5:3b
-```
-
-### 5. Vérifier que tout fonctionne
+### 3. Vérifier que tout fonctionne
 
 ```bash
 git --version
@@ -162,7 +232,7 @@ python3 --version
 fastmcp --version
 node --version
 npm --version
-ollama --version
+ollama --version   # si installé (étape 11, optionnelle)
 ```
 
 ## Bonnes pratiques de l'équipe
