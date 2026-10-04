@@ -124,7 +124,7 @@ curl -sLS https://get.arkade.dev | sh
 arkade install openfaas
 ```
 
-### Étape 9 — Démo serverless : axe 2 **[CLI + GUI à confirmer]**
+### Étape 9 — Démo serverless : axe 2 **[CLI + GUI]**
 
 - **[CLI]** (preuve retenue et documentée, testée et confirmée) :
 ```bash
@@ -133,13 +133,13 @@ arkade install openfaas
   curl -X POST $OPENFAAS_URL/function/mcp-server-function -d '{}'
 ```
 
-- **[GUI]** OpenFaaS fournit en principe un portail web accessible sur l'URL du gateway, permettant de voir les fonctions déployées et de les invoquer avec un payload texte, derrière une authentification basique :
+- **[GUI]** (testé et confirmé le 2026-10-04) : OpenFaaS fournit un portail web accessible sur l'URL du gateway, permettant de voir les fonctions déployées et de les invoquer avec un payload texte, derrière une authentification basique :
 ```bash
   PASSWORD=$(kubectl get secret -n openfaas basic-auth -o jsonpath="{.data.basic-auth-password}" | base64 --decode)
   echo "Utilisateur: admin / Mot de passe: $PASSWORD"
   # Ouvrir http://127.0.0.1:31112/ui/ dans un navigateur et se connecter avec ces identifiants
 ```
-  **Ce test GUI n'a pas encore été vérifié sur notre installation** — à exécuter et confirmer avant de le documenter comme preuve retenue (cohérent avec notre méthodologie de vérification avant conclusion).
+  La fonction `mcp-server-function` apparaît dans la liste ; cliquer dessus permet de l'invoquer directement depuis l'interface (bouton "Invoke").
 
 ### Étape 9bis — Démo complémentaire : cycle éphémère automatique via LocalStack **[CLI]**
 
