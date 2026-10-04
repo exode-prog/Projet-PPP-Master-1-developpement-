@@ -57,6 +57,8 @@ docker ps   # vérifier que keycloak, mcp-gateway, mcp-target-server sont "Up"/"
 
 Le premier démarrage initialise automatiquement le royaume Keycloak (`scripts/keycloak_init.sh`), le client `mcp-target-server` et un utilisateur de test (`testuser`). Keycloak met ~20 secondes à devenir `healthy`.
 
+> Sur une machine plus chargée, Keycloak peut mettre bien plus de 20 secondes (jusqu'à 2-3 minutes observées) à devenir `healthy`. Si le premier `docker compose up -d` échoue avec `dependency failed to start: container keycloak is unhealthy`, ce n'est pas un vrai échec : Keycloak continue de démarrer en arrière-plan. Vérifier avec `docker ps` qu'il devient `healthy`, puis relancer `docker compose up -d`.
+
 ### Étape 5 — Tester l'authentification : axe 3 **[CLI obligatoire + GUI optionnel]**
 
 ```bash
@@ -120,6 +122,13 @@ Protocole complet et résultats de référence : `docs/demo-attaque-contenue.md`
 ```bash
 curl -sfL https://get.k3s.io | sh -
 
+# Configurer l'acces kubectl pour l'utilisateur courant (k3s.yaml n'est lisible que par root par defaut)
+mkdir -p ~/.kube
+sudo k3s kubectl config view --raw > ~/.kube/config
+chmod 600 ~/.kube/config
+export KUBECONFIG=~/.kube/config
+echo 'export KUBECONFIG=~/.kube/config' >> ~/.bashrc
+
 curl -sLS https://get.arkade.dev | sh
 # Si l'installation automatique dans /usr/local/bin echoue (permissions), repli manuel :
 sudo cp arkade /usr/local/bin/arkade
@@ -127,7 +136,8 @@ sudo ln -sf /usr/local/bin/arkade /usr/local/bin/ark
 rm -f arkade
 arkade version   # verifier que la commande est bien disponible
 
-arkade install openfaas
+# --set openfaasPro=false --operator=false : evite l'installation par defaut de l'edition Pro (necessite une licence)
+arkade install openfaas --set openfaasPro=false --operator=false
 ```
 
 > Si OpenFaaS est deja installe sur le cluster (reinstallation), `arkade install openfaas` peut echouer avec une erreur Helm du type `cannot patch "openfaas-prometheus" ... roleRef: cannot change roleRef` (contrainte d'immuabilite RBAC Kubernetes sur `RoleBinding.roleRef`). Ceci n'affecte pas une premiere installation sur machine vierge. En cas d'echec sur une installation existante : `helm history openfaas -n openfaas` puis `helm rollback openfaas <revision precedente> -n openfaas`.
@@ -142,6 +152,11 @@ arkade install openfaas
   sleep 3
 
   export OPENFAAS_URL=http://127.0.0.1:31112
+
+  # Installer faas-cli si absent (arkade peut echouer a le placer dans le PATH)
+  arkade get faas-cli
+  sudo mv ~/.arkade/bin/faas-cli /usr/local/bin/ 2>/dev/null || true
+
   PASSWORD=$(kubectl get secret -n openfaas basic-auth -o jsonpath="{.data.basic-auth-password}" | base64 --decode)
   faas-cli login --gateway $OPENFAAS_URL -u admin -p "$PASSWORD"
 
@@ -164,7 +179,7 @@ arkade install openfaas
 
 Contrairement à OpenFaaS (scale manuel), LocalStack émule le runtime AWS Lambda officiel et démontre un cycle de vie réellement automatique (création à l'invocation, destruction après inactivité, sans intervention). Détail et limite d'OpenFaaS à ce sujet : `docs/axe2-scale-to-zero.md`.
 
-> `.env.localstack` est optionnel (ignoré par git) : utile seulement avec un compte LocalStack Pro. Sans lui, LocalStack Community fonctionne normalement pour cette démo.
+> `.env.localstack` (ignoré par git) est **obligatoire** avec les versions récentes de l'image `localstack/localstack:latest` : sans `LOCALSTACK_AUTH_TOKEN` valide, le conteneur refuse de démarrer (`License activation failed!`). Créer un compte gratuit sur https://app.localstack.cloud, récupérer un token, puis `echo "LOCALSTACK_AUTH_TOKEN=<votre_token>" > .env.localstack` — LocalStack active automatiquement une licence d'essai ("trial") et démarre normalement. *(Correction : une version antérieure de ce README indiquait ce token comme optionnel ; ce n'est plus le cas avec les images récentes.)*
 
 ```bash
 docker compose -f docker-compose.localstack.yml up -d
@@ -203,7 +218,7 @@ watch -n 5 docker ps
 npx @modelcontextprotocol/inspector
 ```
 
-Ouvrir l'URL affichée dans un navigateur, se connecter en Streamable HTTP sur `http://127.0.0.1:8001/mcp` (sans protection) ou `http://127.0.0.1:8002/mcp` (durci gVisor) pour la démo de l'axe 1. Pour l'axe 3, voir la note GUI optionnelle de l'étape 5.
+Ouvrir l'URL affichée dans un navigateur. Par défaut, l'écran d'accueil affiche des **serveurs d'exemple préconfigurés** (filesystem, everything, example-server) et non une connexion vide : cliquer sur **« Ajouter des serveurs »** (Add servers) pour configurer manuellement une nouvelle connexion. Choisir le transport **Streamable HTTP** et se connecter sur `http://127.0.0.1:8001/mcp` (sans protection) ou `http://127.0.0.1:8002/mcp` (durci gVisor) pour la démo de l'axe 1. Pour l'axe 3, voir la note GUI optionnelle de l'étape 5.
 
 ### Étape 11 (optionnelle) — Ollama comme hôte MCP autonome
 
@@ -334,6 +349,12 @@ Par souci de transparence (et conformément à la méthodologie du projet : vér
 | Installation gVisor obsolète dans le README initial | Le téléchargement manuel du binaire `runsc` seul (404 sur l'ancienne URL) ne fonctionne plus ; la doc officielle elle-même indique un chemin incorrect (`/usr/local/bin/runsc` au lieu de `/usr/bin/runsc` réellement utilisé par le paquet apt) | Détecté lors du test de reproductibilité complet sur un clone neuf (`docs/README : méthode APT substituée, chemin corrigé après vérification avec `dpkg -L runsc` et test fonctionnel réel (`docker run --runtime=runsc hello-world`) |
 | Installation arkade incomplète | Le script d'installation telecharge le binaire mais echoue parfois a l'installer dans /usr/local/bin (permissions), laissant la commande introuvable | Repli manuel documente a l'Étape 8 (copie + lien symbolique), confirme fonctionnel lors du test de reproductibilite |
 | Réinstallation OpenFaaS en conflit RBAC | Reinstaller OpenFaaS sur un cluster ou il est deja deploye declenche un upgrade Helm qui echoue (contrainte d'immuabilite sur le roleRef d'un RoleBinding), laissant des pods en CrashLoopBackOff en parallele des pods stables | Diagnostique via l'historique Helm et l'etat des pods (pas de supposition), corrige par un rollback Helm vers la revision stable precedente (5 pods Running restaures) ; n'invalide pas la commande pour une premiere installation sur machine vierge |
+| Keycloak healthcheck trop court sur machine chargée | Compose abandonne l'attente de `healthy` après ~183s alors que Keycloak termine réellement son démarrage à 90-95s sur une machine chargée (JVM/Quarkus), provoquant `dependency failed to start: container keycloak is unhealthy` | Pas un vrai échec : vérifié via `docker logs keycloak` montrant un démarrage réussi après le timeout ; corrigé en documentant qu'il suffit de relancer `docker compose up -d` une fois `docker ps` affichant `healthy` |
+| Permissions kubeconfig non-root | `/etc/rancher/k3s/k3s.yaml` est lisible uniquement par root par défaut, rendant `kubectl`/`helm` inutilisables pour un utilisateur non-root (erreur masquée en `kubernetes cluster unreachable`) | Diagnostiqué via `sudo k3s kubectl get nodes` fonctionnant alors que `kubectl get nodes` échouait ; corrigé par la copie du kubeconfig vers `~/.kube/config` documentée à l'Étape 8 |
+| arkade installe OpenFaaS Pro par défaut | `arkade install openfaas` génère une commande Helm avec `openfaasPro=true`, bloquant gateway/dashboard/autoscaler en `FailedMount` faute du secret `openfaas-license` | Corrigé par `--set openfaasPro=false --operator=false` (les deux flags sont nécessaires), confirmé via les logs du `queue-worker` affichant "Community Edition" |
+| `awslocal` nécessite un vrai binaire `aws` | `awslocal` est un wrapper qui échoue silencieusement (`[Errno 2] No such file or directory: b'/snap/bin/aws'`) si aucun `aws` CLI réel n'est présent dans le PATH | Diagnostiqué via `which -a aws` et `snap list aws-cli` ; corrigé par `python3 -m pip install awscli` en complément de `awscli-local` |
+| `.env.localstack` devenu obligatoire avec l'image `:latest` | Une conclusion précédente de ce README indiquait ce fichier comme optionnel (Pro uniquement) ; une image `localstack/localstack:latest` plus récente refuse désormais de démarrer sans `LOCALSTACK_AUTH_TOKEN` valide (`License activation failed!`) | Conclusion précédente invalidée par preuve empirique sur une seconde machine et corrigée à l'Étape 9bis plutôt que maintenue par confort |
+| MCP Inspector affiche des serveurs d'exemple par défaut | L'écran d'accueil de `npx @modelcontextprotocol/inspector` affiche des connexions préconfigurées (filesystem, everything, example-server) au lieu d'un état vide, ce qui peut laisser croire que la cible n'apparaît pas | Clarifié à l'Étape 10 : il faut cliquer sur « Ajouter des serveurs » pour configurer manuellement la connexion Streamable HTTP vers le serveur cible |
 
 ## Roadmap (les sprints)
 
