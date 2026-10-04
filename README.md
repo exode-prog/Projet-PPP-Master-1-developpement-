@@ -136,8 +136,19 @@ arkade install openfaas
 
 - **[CLI]** (preuve retenue et documentée, testée et confirmée) :
 ```bash
+  # Le service gateway est ClusterIP (pas de NodePort) : un port-forward actif est requis
+  kubectl port-forward -n openfaas svc/gateway 31112:8080 > /tmp/pf-gateway.log 2>&1 &
+  disown
+  sleep 3
+
   export OPENFAAS_URL=http://127.0.0.1:31112
-  faas-cli deploy -f stack.yaml
+  PASSWORD=$(kubectl get secret -n openfaas basic-auth -o jsonpath="{.data.basic-auth-password}" | base64 --decode)
+  faas-cli login --gateway $OPENFAAS_URL -u admin -p "$PASSWORD"
+
+  # Le template python3-http n'est pas inclus dans le pull generique, il vient du template store
+  faas-cli template store pull python3-http
+
+  faas-cli deploy -f stack.yaml --gateway $OPENFAAS_URL
   curl -X POST $OPENFAAS_URL/function/mcp-server-function -d '{}'
 ```
 
@@ -153,9 +164,16 @@ arkade install openfaas
 
 Contrairement à OpenFaaS (scale manuel), LocalStack émule le runtime AWS Lambda officiel et démontre un cycle de vie réellement automatique (création à l'invocation, destruction après inactivité, sans intervention). Détail et limite d'OpenFaaS à ce sujet : `docs/axe2-scale-to-zero.md`.
 
+> `.env.localstack` est optionnel (ignoré par git) : utile seulement avec un compte LocalStack Pro. Sans lui, LocalStack Community fonctionne normalement pour cette démo.
+
 ```bash
 docker compose -f docker-compose.localstack.yml up -d
 sleep 10
+
+# Credentials factices requis par awslocal/boto3 (sinon tentative de contacter le service de metadonnees EC2, qui bloque)
+export AWS_ACCESS_KEY_ID=test
+export AWS_SECRET_ACCESS_KEY=test
+export AWS_DEFAULT_REGION=us-east-1
 
 awslocal lambda create-function \
   --function-name mcp-lambda-function \
