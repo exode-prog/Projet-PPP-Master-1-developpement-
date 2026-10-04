@@ -141,6 +141,36 @@ arkade install openfaas
 ```
   **Ce test GUI n'a pas encore été vérifié sur notre installation** — à exécuter et confirmer avant de le documenter comme preuve retenue (cohérent avec notre méthodologie de vérification avant conclusion).
 
+### Étape 9bis — Démo complémentaire : cycle éphémère automatique via LocalStack **[CLI]**
+
+Contrairement à OpenFaaS (scale manuel), LocalStack émule le runtime AWS Lambda officiel et démontre un cycle de vie réellement automatique (création à l'invocation, destruction après inactivité, sans intervention). Détail et limite d'OpenFaaS à ce sujet : `docs/axe2-scale-to-zero.md`.
+
+```bash
+docker compose -f docker-compose.localstack.yml up -d
+sleep 10
+
+awslocal lambda create-function \
+  --function-name mcp-lambda-function \
+  --runtime python3.12 --handler handler.handler \
+  --zip-file fileb://localstack-lambda/function.zip \
+  --role arn:aws:iam::000000000000:role/lambda-role
+
+# Attendre l'état Active avant d'invoquer (la fonction reste "Pending" quelques secondes)
+for i in {1..15}; do
+  STATE=$(awslocal lambda get-function --function-name mcp-lambda-function --query 'Configuration.State' --output text)
+  [ "$STATE" = "Active" ] && break
+  sleep 2
+done
+
+docker ps   # avant : seuls localstack-mcp et local-registry
+awslocal lambda invoke --function-name mcp-lambda-function output.json
+cat output.json
+docker ps   # après : un conteneur public.ecr.aws/lambda/python:3.12 est apparu
+
+# Laisser tourner sans ré-invoquer pour observer la disparition automatique (~20 min)
+watch -n 5 docker ps
+```
+
 ### Étape 10 — Démonstration visuelle **[GUI]** (MCP Inspector)
 
 ```bash
@@ -261,6 +291,20 @@ git config --global credential.helper store
 
 En cas de blocage, j'ai partagé mon fichier docx ici, ça peut vous aider :
 https://docs.google.com/document/d/1XvrIbPh8w_J7UX1EusB-1BuBKecIPWpmOzRJd9BoSaU/edit?usp=sharing
+
+## Difficultés et limites rencontrées
+
+Par souci de transparence (et conformément à la méthodologie du projet : vérifier avant de conclure), voici les principales difficultés rencontrées et comment elles ont été traitées — aucune n'a été contournée en silence.
+
+| Difficulté | Constat | Traitement |
+|---|---|---|
+| Scale-to-zero OpenFaaS indisponible | Fonctionnalité réservée à l'édition Pro, confirmé par la doc officielle et reconfirmé empiriquement (déploiement actif sans interruption sur plusieurs jours) | Cycle de vie manuel retenu (`spawn.sh`/`teardown.sh`) ; preuve du concept via LocalStack à la place. Détail : `docs/axe2-scale-to-zero.md` |
+| Knative comme alternative à OpenFaaS | Bug DNS chronique et bloquant (`activator` → `autoscaler`), 28 échecs reproductibles sur 144 minutes, 4 hypothèses testées et éliminées | Piste abandonnée et documentée avec sa cause racine plutôt que masquée. Détail : `docs/axe2-scale-to-zero.md` |
+| NetworkPolicy no-egress (axe 2) | Définie (`no-egress-policy.yaml`) mais non appliquée en pratique : le CNI Flannel par défaut de k3s ne supporte pas les NetworkPolicy | Limitation assumée et documentée (`docs/no-egress-sprint5.md`) ; isolation réseau du projet reposant sur la séparation des réseaux Docker de l'axe 1 |
+| Interruption silencieuse de Keycloak | Conteneur trouvé `Exited (255)` sans trace d'erreur applicative, probablement liée à un redémarrage VM/Docker externe au projet | Diagnostiqué par élimination (`docker inspect`, logs horodatés) plutôt que supposé être un bug de code ; relancé et revalidé de bout en bout |
+| Variabilité de mesure du cold-start gVisor | Trois mesures indépendantes ont donné des écarts importants (6,8 % à 120 % de surcoût CPU) selon le délai avant mesure | Présenté honnêtement comme une plage et non un chiffre unique, avec la cause probable documentée (`docs/tco.md`) plutôt qu'un chiffre choisi arbitrairement |
+| Champ Headers non persistant dans MCP Inspector | Le champ existe bien (recherché et confirmé, contrairement à une hypothèse initiale erronée) mais sa valeur n'est pas sauvegardée entre rechargements de page | Authentification documentée comme test CLI obligatoire (`curl`) ; GUI utilisable seulement en démonstration ponctuelle |
+| Proxy serverless incomplet | Le handler OpenFaaS renvoie une confirmation statique plutôt que de relayer une vraie session MCP, alors que son docstring initial le suggérait | Docstring corrigé pour rester fidèle au code ; portée du test clarifiée comme preuve de concept du mécanisme serverless, pas une intégration fonctionnelle axe 1/2/3 |
 
 ## Roadmap (les sprints)
 
