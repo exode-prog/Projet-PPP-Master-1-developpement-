@@ -99,6 +99,18 @@ Avec un token `adminuser` (rôle `mcp-admin` en plus), le même appel passe le c
 
 Implémentation : `src/gateway/gateway.py` (`ToolRoleRequirementMiddleware`). Remplace l'ancienne ébauche `src/target_server/auth.py` (Sprint 2, jamais branchée — supprimée).
 
+### Étape 5ter : PKCE — protection du code d'autorisation **[CLI]**
+
+Le flux OAuth2 Authorization Code classique est vulnerable au vol du `code` intermediaire (URL loggee, proxy, navigateur partage). PKCE ajoute un secret cote client (`code_verifier`) dont seule une empreinte SHA256 (`code_challenge`) est envoyee a Keycloak ; l'echange final du `code` contre un token exige le `code_verifier` original.
+
+Le client `mcp-target-server` est configure pour l'exiger (`pkce.code.challenge.method=S256`) :
+
+```bash
+python3 scripts/test_pkce_flow.py valid    # code_verifier correct -> token obtenu
+python3 scripts/test_pkce_flow.py invalid  # code_verifier errone  -> rejet explicite
+# -> {"error":"invalid_grant","error_description":"PKCE verification failed: Code mismatch"}
+```
+
 ### Étape 6 : gVisor (prérequis axe 1)
 
 ```bash
