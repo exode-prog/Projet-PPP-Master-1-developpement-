@@ -47,10 +47,14 @@ Utiliser `subprocess.run(["ping", "-c", "1", hostname], shell=False)` avec une l
 ### Approche retenue dans ce projet (Sprint 4)
 Plutôt que de corriger le code, ce projet démontre une **isolation au niveau infrastructure** : même si la vulnérabilité applicative reste présente, l'exécution du serveur dans un environnement sandboxé (gVisor, seccomp, AppArmor, isolation réseau) doit empêcher l'attaquant d'atteindre le système hôte réel, quelle que soit la commande injectée.
 
+**Précision importante (testée empiriquement)** : sous `runtime: runsc` (gVisor), les profils seccomp et AppArmor personnalisés déclarés via `security_opt` ne sont **pas évalués par le noyau hôte** — gVisor intercepte les appels système dans son propre espace utilisateur (le Sentry) avant qu'ils n'atteignent les hooks seccomp/LSM classiques. Vérifié par l'absence totale d'entrées `apparmor="DENIED"` dans les logs noyau pour le conteneur durci, malgré un accès réussi à `/etc/shadow` lors d'un test volontaire. Les deux profils personnalisés ont donc été validés séparément sous le runtime standard (`runc`, voir `docker-compose.vulnerable-seccomp-apparmor-test.yml`) où ils bloquent effectivement `ptrace`, `mount` et l'accès à `/etc/shadow` (confirmé par les logs noyau). Sous gVisor, l'isolation effective repose donc principalement sur gVisor lui-même (CapEff=0, noyau virtualisé séparé) ; seccomp/AppArmor restent déclarés en défense en profondeur mais sont redondants avec les garanties déjà apportées par le Sentry.
+
 ## Statut
 
 - [x] Vulnérabilité implémentée (Sprint 3)
 - [x] Exploitation testée sans protection (Sprint 3, Tâche 3)
 - [x] Neutralisation validée avec gVisor (Sprint 4)
+- [x] Profil seccomp personnalisé écrit et validé (Sprint 4) — `security/seccomp-hardened.json`
+- [x] Profil AppArmor personnalisé écrit et validé (Sprint 4) — `security/apparmor-mcp-vulnerable-hardened.profile`
 
 Preuve complète (cold-start, consommation de ressources, capacités Linux effectives avant/après, tentatives de persistance) : voir `docs/demo-attaque-contenue.md`, rejouée et capturée le 2026-10-03 lors de l'intégration finale du projet.
