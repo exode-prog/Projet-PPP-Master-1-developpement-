@@ -186,7 +186,7 @@ npx @modelcontextprotocol/inspector
 
 Cliquer **« Ajouter des serveurs »** (l'accueil affiche des serveurs d'exemple préconfigurés, pas un état vide). Transport **Streamable HTTP** → `http://127.0.0.1:8001/mcp` (sans protection) ou `http://127.0.0.1:8002/mcp` (durci).
 
-### Étape 11 (optionnelle) — Ollama comme hôte MCP autonome
+### Étape 11 (optionnelle) : Ollama comme hôte MCP autonome
 
 Complément à MCP Inspector (A.5). Démontre le consentement humain (HIL) avant exécution d'outil.
 
