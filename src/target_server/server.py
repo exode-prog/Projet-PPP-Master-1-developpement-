@@ -16,11 +16,16 @@ from audit import log_event
 
 mcp = FastMCP(name="Projet master 1 : mcp-secure-platform")
 
+# Identifiant de cette instance (utile uniquement pour demontrer la repartition
+# de charge entre plusieurs replicas derriere la gateway, cdc B.4). Sans impact
+# fonctionnel : une valeur par defaut est utilisee si la variable n'est pas definie.
+INSTANCE_ID = os.environ.get("INSTANCE_ID", "unique")
+
 
 @mcp.tool()
 def hello(name: str = "monde") -> str:
     """Retourne un message de salutation simple. Sert à valider la chaîne MCP de bout en bout."""
-    result = f"Bonjour, {name} ! Le serveur MCP fonctionne correctement."
+    result = f"Bonjour, {name} ! Le serveur MCP fonctionne correctement. (instance: {INSTANCE_ID})"
     log_event("hello", {"name": name}, "success", result)
     return result
 

@@ -47,11 +47,11 @@ services:
     networks:
       - mcp-net
 
-  target-server:
+  target-server-1:
     build:
       context: .
       dockerfile: src/target_server/Dockerfile
-    container_name: mcp-target-server
+    container_name: mcp-target-server-1
     depends_on:
       keycloak-init:
         condition: service_completed_successfully
@@ -62,6 +62,7 @@ services:
       - KEYCLOAK_URL=http://keycloak:8080
       - KEYCLOAK_REALM=mcp-secure-platform
       - KEYCLOAK_CLIENT_ID=mcp-target-server
+      - INSTANCE_ID=target-1
     deploy:
       resources:
         limits:
@@ -72,15 +73,53 @@ services:
     networks:
       - mcp-net
 
+  target-server-2:
+    build:
+      context: .
+      dockerfile: src/target_server/Dockerfile
+    container_name: mcp-target-server-2
+    depends_on:
+      keycloak-init:
+        condition: service_completed_successfully
+    environment:
+      - MCP_TRANSPORT=http
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8000
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=mcp-secure-platform
+      - KEYCLOAK_CLIENT_ID=mcp-target-server
+      - INSTANCE_ID=target-2
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+          pids: 256
+    restart: unless-stopped
+    networks:
+      - mcp-net
+
+  target-lb:
+    image: nginx:alpine
+    container_name: mcp-target-lb
+    depends_on:
+      - target-server-1
+      - target-server-2
+    volumes:
+      - ./nginx/nginx-lb.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+    networks:
+      - mcp-net
+
   gateway:
     build:
       context: .
       dockerfile: src/gateway/Dockerfile
     container_name: mcp-gateway
     depends_on:
-      - target-server
+      - target-lb
     environment:
-      - BACKEND_URL=http://target-server:8000/mcp
+      - BACKEND_URL=http://target-lb:8000/mcp
       - KEYCLOAK_INTERNAL_URL=http://keycloak:8080
       - KEYCLOAK_PUBLIC_URL=http://localhost:8080
       - KEYCLOAK_REALM=mcp-secure-platform

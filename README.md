@@ -111,6 +111,17 @@ python3 scripts/test_pkce_flow.py invalid  # code_verifier errone  -> rejet expl
 # -> {"error":"invalid_grant","error_description":"PKCE verification failed: Code mismatch"}
 ```
 
+### Étape 4bis : Répartition de charge (load balancing) **[CLI]**
+
+Le cdc B.4 exige que la gateway assure "la répartition de charge". Deux instances identiques du serveur cible (`target-server-1`, `target-server-2`) tournent derrière un répartiteur nginx (`target-lb`), avec un hachage sur l'en-tête `mcp-session-id` : une session donnée reste toujours sur la même instance (le protocole MCP est stateful), mais des sessions différentes se répartissent entre les deux.
+
+```bash
+# Plusieurs sessions independantes -> instances differentes (voir le champ "instance:" dans la reponse de l'outil hello)
+# Verification : docker logs mcp-target-server-1 / mcp-target-server-2 montrent chacun une partie du trafic.
+```
+
+Limite assumée et documentée : la première requête d'une session (`initialize`, avant qu'un `mcp-session-id` existe) hache systématiquement vers la même instance ; seule la répartition entre sessions déjà établies est mesurable. Comportement vérifié en conditions réelles sur LiveKit (5 sessions testées, répartition confirmée entre `target-1` et `target-2`, cohérence intra-session confirmée).
+
 ### Étape 6 : gVisor (prérequis axe 1)
 
 ```bash
