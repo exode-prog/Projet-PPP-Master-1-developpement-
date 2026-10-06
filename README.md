@@ -19,6 +19,8 @@ Plateforme d'exécution sécurisée pour serveurs MCP (Model Context Protocol) :
 
 Machine Linux (Ubuntu) sans prérequis. Suivre l'ordre, chaque étape dépend de la précédente. **[CLI]** = terminal, **[GUI]** = navigateur.
 
+**Configuration minimale recommandée** : 4 CPU / 8 Go RAM. Avec moins (observé avec 1 CPU), les pods OpenFaaS peuvent rester bloqués en `Pending` faute de ressources.
+
 ### Étape 1 : Cloner
 
 ```bash
@@ -151,6 +153,11 @@ Contrairement à OpenFaaS (scale manuel), LocalStack émule AWS Lambda avec un c
 `.env.localstack` (ignoré par git) **obligatoire** : compte gratuit sur https://app.localstack.cloud, puis `echo "LOCALSTACK_AUTH_TOKEN=<token>" > .env.localstack`.
 
 ```bash
+# Installer awslocal/aws si absents (pip ancien : --user, pas --break-system-packages)
+pip3 install --user awscli-local awscli
+export PATH="$HOME/.local/bin:$PATH"
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+
 docker compose -f docker-compose.localstack.yml up -d
 sleep 10
 
