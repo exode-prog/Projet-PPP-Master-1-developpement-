@@ -1,0 +1,7 @@
+# Surcouche TEMPORAIRE pour demo MCP Inspector (primitives A.2).
+# Usage : docker compose -f docker-compose.yml -f docker-compose.demo-inspector.yml up -d target-server-1
+# Annulation : docker compose -f docker-compose.yml up -d target-server-1
+services:
+  target-server-1:
+    ports:
+      - "127.0.0.1:8010:8000"
