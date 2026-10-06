@@ -213,6 +213,34 @@ un LLM réel respecterait cette consigne dépend du LLM de l'hôte utilisé (hor
 serveur MCP lui-même), ce qui est la limite inhérente de toute mitigation par instruction
 système (defense-in-depth, pas une garantie absolue).
 
+### Étape 5septies : Livrable des schémas JSON des outils (cahier des charges A.7) **[CLI]**
+
+**Exigence.** Le cdc (A.7) demande explicitement que le dépôt contienne, en plus du
+Dockerfile/docker-compose.yml, **les schémas JSON des outils** comme livrable consultable
+sans avoir à lancer le serveur.
+
+**Implémentation.** `scripts/export_tool_schemas.py` : script autonome (aucune dépendance
+externe, uniquement `urllib`/`json` de la bibliothèque standard) qui parle directement le
+protocole JSON-RPC 2.0 de MCP (`initialize`, `notifications/initialized`, `tools/list` avec
+pagination par curseur) contre une URL Streamable HTTP, avec support optionnel d'un jeton
+`Authorization: Bearer`. Il produit `schemas/tools.schema.json`, qui contient les schémas
+d'entrée (et de sortie) des 4 outils du serveur (`hello`, `add`, `summarize_audit_log`,
+`list_client_roots`).
+
+**Vérification empirique — via la gateway authentifiée, pas en direct.** Le script a été
+exécuté contre `http://localhost:9000/mcp` (la gateway, pas `target-server` directement) avec
+un véritable jeton Keycloak de `adminuser` :
+
+```bash
+python3 scripts/export_tool_schemas.py http://localhost:9000/mcp schemas/tools.schema.json "$TOKEN"
+```
+
+La sortie confirme la connexion à travers la gateway (`Connecte a : MCP Gateway - Sprint 6`)
+et liste les 4 outils expédiés. Ceci constitue, à la fois, le livrable A.7 et une preuve
+supplémentaire que les primitives MCP restent accessibles et correctes à travers la couche de
+sécurité complète (RBAC, PKCE, anti-passthrough), sans recourir à MCP Inspector (qui ne
+supporte pas l'injection d'un en-tête d'autorisation dans la version installée pour ce projet).
+
 ### Étape 4bis : Répartition de charge (load balancing) **[CLI]**
 
 Le cdc B.4 exige que la gateway assure "la répartition de charge". Deux instances identiques du serveur cible (`target-server-1`, `target-server-2`) tournent derrière un répartiteur nginx (`target-lb`), avec un hachage sur l'en-tête `mcp-session-id` : une session donnée reste toujours sur la même instance (le protocole MCP est stateful), mais des sessions différentes se répartissent entre les deux.
