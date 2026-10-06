@@ -35,9 +35,9 @@ services:
       - /tmp:noexec,nosuid,size=64m    # zone temporaire, sans exécution possible
   
     security_opt:
-      - no-new-privileges:true         # empêche l'élévation de privilèges
-      # Le profil seccomp par défaut de Docker est appliqué automatiquement
-      # (pas besoin de le déclarer explicitement) — il filtre déjà ~44 syscalls dangereux.
+      - no-new-privileges:true                              # empêche l'élévation de privilèges
+      - seccomp=./security/seccomp-hardened.json             # profil seccomp durci (B.5) : profil Docker par défaut - 22 syscalls supplémentaires
+      - apparmor=mcp-vulnerable-hardened                     # profil AppArmor durci (B.5) : fichiers/réseau/ptrace restreints
     networks:
       - vulnerable-hardened-net
 

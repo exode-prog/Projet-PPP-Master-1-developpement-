@@ -1,0 +1,31 @@
+# Variante de TEST uniquement : meme durcissement (seccomp + AppArmor personnalises)
+# que docker-compose.vulnerable-hardened.yml, mais SANS gVisor (runtime standard runc).
+# Objectif : prouver que seccomp/AppArmor personnalises fonctionnent reellement,
+# independamment de gVisor (qui les rend inoperants, cf. test precedent).
+services:
+  vulnerable-server-seccomp-apparmor-test:
+    build:
+      context: .
+      dockerfile: src/vulnerable_server/Dockerfile
+    container_name: mcp-vulnerable-server-SECCOMP-APPARMOR-TEST
+    restart: "no"
+    ports:
+      - "127.0.0.1:8003:8003"
+    environment:
+      - MCP_TRANSPORT=http
+      - MCP_PORT=8003
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./security/seccomp-hardened.json
+      - apparmor=mcp-vulnerable-hardened
+    networks:
+      - test-net
+
+networks:
+  test-net:
+    driver: bridge
