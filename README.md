@@ -146,7 +146,7 @@ curl -X POST $OPENFAAS_URL/function/mcp-server-function -d '{}'
 
 **[GUI]** : ouvrir `http://127.0.0.1:31112/ui/` avec `admin` / `$PASSWORD` ci-dessus, invoquer `mcp-server-function` depuis l'interface.
 
-### Étape 9bis : Cycle éphémère automatique via LocalStack **[CLI]**
+### Étape 9 : Cycle éphémère automatique via LocalStack **[CLI]**
 
 Contrairement à OpenFaaS (scale manuel), LocalStack émule AWS Lambda avec un cycle de vie réellement automatique. Détail : `docs/axe2-scale-to-zero.md`.
 
@@ -205,7 +205,7 @@ pip install mcp-client-for-ollama
 ollmcp -u http://127.0.0.1:8001/mcp -m qwen2.5:3b
 ```
 
-ollmcp demande confirmation (`Allow this tool call? [y/n]`) avant tout appel d'outil — c'est le consentement explicite exigé par le cdc A.6. Détail : `docs/demo-ollama.md`.
+ollmcp demande confirmation (`Allow this tool call? [y/n]`) avant tout appel d'outil  c'est le consentement explicite exigé par le cdc A.6. Détail : `docs/demo-ollama.md`.
 
 ### Tout arrêter
 
