@@ -1,0 +1,135 @@
+{
+  "project": "Plateforme MCP securisee - Projet PPP Master 1",
+  "generatedFrom": "http://localhost:8010/mcp",
+  "toolCount": 4,
+  "tools": [
+    {
+      "name": "hello",
+      "description": "Retourne un message de salutation simple. Sert à valider la chaîne MCP de bout en bout.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "default": "monde",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": {
+        "properties": {
+          "result": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "type": "object",
+        "x-fastmcp-wrap-result": true
+      },
+      "meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "add",
+      "description": "Additionne deux nombres. Nécessite une confirmation explicite de l'utilisateur avant exécution.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "type": "number"
+          },
+          "b": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "a",
+          "b"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "properties": {
+          "result": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "type": "object",
+        "x-fastmcp-wrap-result": true
+      },
+      "meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "summarize_audit_log",
+      "description": "Resume les dernieres entrees du journal d'audit via le LLM de l'hote (primitive Sampling, A.2 cdc).",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "last_n": {
+            "default": 5,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": {
+        "properties": {
+          "result": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "type": "object",
+        "x-fastmcp-wrap-result": true
+      },
+      "meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "list_client_roots",
+      "description": "Liste les repertoires racines (roots) que le client MCP a declares comme accessibles (primitive Roots, A.2 cdc).",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "output_schema": {
+        "properties": {
+          "result": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "type": "object",
+        "x-fastmcp-wrap-result": true
+      },
+      "meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    }
+  ]
+}
