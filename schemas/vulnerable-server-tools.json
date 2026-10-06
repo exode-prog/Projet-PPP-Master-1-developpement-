@@ -1,0 +1,42 @@
+{
+  "server": {
+    "name": "Serveur MCP VULNÉRABLE - Sprint 3 (démo sécurité)",
+    "version": "3.4.8"
+  },
+  "source_url": "http://127.0.0.1:8001/mcp",
+  "tools": [
+    {
+      "name": "ping_host",
+      "description": "Fait un ping vers un hôte donné et retourne le résultat.\n\nVULNÉRABLE : le paramètre 'hostname' est injecté directement dans\nune commande shell, sans aucune validation ni échappement. Un attaquant\npeut y insérer des métacaractères shell (;, &&, |, `, $()) pour exécuter\ndes commandes arbitraires sur le système hôte.\n\nExemple d'exploitation :\n    hostname = \"127.0.0.1; cat /etc/passwd\"\n    hostname = \"127.0.0.1 && whoami\"\n    hostname = \"$(id)\"",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "hostname": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "hostname"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "type": "object",
+        "x-fastmcp-wrap-result": true
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "server": {
+    "name": "MCP Gateway - Sprint 6",
+    "version": "3.4.8"
+  },
+  "source_url": "http://127.0.0.1:9000/mcp",
+  "tools": [
+    {
+      "name": "hello",
+      "description": "Retourne un message de salutation simple. Sert à valider la chaîne MCP de bout en bout.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "default": "monde",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "type": "object",
+        "x-fastmcp-wrap-result": true
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    },
+    {
+      "name": "add",
+      "description": "Additionne deux nombres. Nécessite une confirmation explicite de l'utilisateur avant exécution.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "a": {
+            "type": "number"
+          },
+          "b": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "a",
+          "b"
+        ],
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "type": "object",
+        "x-fastmcp-wrap-result": true
+      },
+      "_meta": {
+        "fastmcp": {
+          "tags": []
+        }
+      }
+    }
+  ]
+}
