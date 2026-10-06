@@ -72,6 +72,33 @@ Réponse `"serverInfo":{"name":"MCP Gateway - Sprint 6"...}` = axe 3 validé.
 
 **[GUI]** optionnel : coller `Authorization: Bearer <TOKEN>` dans Headers de MCP Inspector avant connexion à `http://127.0.0.1:9000/mcp` (non persistant entre rechargements, démo ponctuelle seulement).
 
+### Étape 5bis : RBAC — autorisation par rôle **[CLI]**
+
+L'authentification JWT (étape 5) vérifie seulement qu'un token est valide, pas ce que son porteur a le droit de faire. Un deuxième rôle Keycloak (`mcp-admin`) et un deuxième utilisateur (`adminuser`, en plus de `testuser`) ont été ajoutés pour démontrer un vrai contrôle d'autorisation : l'outil `add` exige le rôle `mcp-admin`, l'outil `hello` reste ouvert à tout utilisateur authentifié (`mcp-user`).
+
+```bash
+# Obtenir un token pour chaque utilisateur (voir scripts/keycloak_init.sh pour la creation)
+CLIENT_SECRET=$(docker exec keycloak /opt/keycloak/bin/kcadm.sh get clients/$( \
+  docker exec keycloak /opt/keycloak/bin/kcadm.sh get clients -r mcp-secure-platform -q clientId=mcp-target-server \
+  | grep -o '"id" : "[^"]*"' | head -1 | sed 's/"id" : "//;s/"$//' \
+)/client-secret -r mcp-secure-platform | grep -o '"value" : "[^"]*"' | sed 's/"value" : "//;s/"$//')
+
+TOKEN_TEST=$(curl -s -X POST http://localhost:8080/realms/mcp-secure-platform/protocol/openid-connect/token \
+  -d "client_id=mcp-target-server" -d "client_secret=$CLIENT_SECRET" \
+  -d "grant_type=password" -d "username=testuser" -d "password=test1234" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# testuser (role mcp-user seul) -> add : REFUSE
+curl -s -X POST http://127.0.0.1:9000/mcp -H "Authorization: Bearer $TOKEN_TEST" \
+  -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"add","arguments":{"a":1,"b":2}}}'
+# -> "Accès refusé : l'outil 'add' nécessite le rôle 'mcp-admin'"
+```
+
+Avec un token `adminuser` (rôle `mcp-admin` en plus), le même appel passe le contrôle de rôle (l'outil `add` demande ensuite une confirmation interactive, cf. élicitation Sprint 2). `hello` fonctionne pour les deux utilisateurs, sans restriction de rôle.
+
+Implémentation : `src/gateway/gateway.py` (`ToolRoleRequirementMiddleware`). Remplace l'ancienne ébauche `src/target_server/auth.py` (Sprint 2, jamais branchée — supprimée).
+
 ### Étape 6 : gVisor (prérequis axe 1)
 
 ```bash

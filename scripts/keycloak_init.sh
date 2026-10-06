@@ -64,4 +64,33 @@ $KCADM update users/$USER_ID -r $REALM -s 'requiredActions=[]' 2>/dev/null || tr
 echo "Attribution du role $ROLE_NAME a $TEST_USER (sans erreur si deja attribue)"
 $KCADM add-roles -r $REALM --uusername $TEST_USER --rolename $ROLE_NAME 2>/dev/null || echo "(deja attribue ou non applicable, on continue)"
 
+# --- RBAC : second role + second utilisateur (pour demontrer le refus d'acces) ---
+ADMIN_ROLE_NAME="mcp-admin"
+ADMIN_USER="adminuser"
+ADMIN_PASS="admin1234"
+
+if ! $KCADM get roles/$ADMIN_ROLE_NAME -r $REALM >/dev/null 2>&1; then
+  echo "Creation du role $ADMIN_ROLE_NAME"
+  $KCADM create roles -r $REALM -s name=$ADMIN_ROLE_NAME
+else
+  echo "Role $ADMIN_ROLE_NAME deja present"
+fi
+
+ADMIN_USER_ID=$($KCADM get users -r $REALM -q username=$ADMIN_USER | grep -o '"id" : "[^"]*"' | head -1 | sed 's/"id" : "//;s/"$//')
+if [ -z "$ADMIN_USER_ID" ]; then
+  echo "Creation de l'utilisateur $ADMIN_USER"
+  $KCADM create users -r $REALM -s username=$ADMIN_USER -s enabled=true -s email=$ADMIN_USER@example.com -s emailVerified=true -s firstName=Admin -s lastName=User
+  ADMIN_USER_ID=$($KCADM get users -r $REALM -q username=$ADMIN_USER | grep -o '"id" : "[^"]*"' | head -1 | sed 's/"id" : "//;s/"$//')
+else
+  echo "Utilisateur $ADMIN_USER deja present (id=$ADMIN_USER_ID), on ne recree pas"
+fi
+
+echo "Fixation/verification du mot de passe de $ADMIN_USER"
+$KCADM set-password -r $REALM --username $ADMIN_USER --new-password $ADMIN_PASS
+$KCADM update users/$ADMIN_USER_ID -r $REALM -s 'requiredActions=[]' 2>/dev/null || true
+
+echo "Attribution des roles a $ADMIN_USER (mcp-user + mcp-admin)"
+$KCADM add-roles -r $REALM --uusername $ADMIN_USER --rolename $ROLE_NAME 2>/dev/null || echo "(deja attribue, on continue)"
+$KCADM add-roles -r $REALM --uusername $ADMIN_USER --rolename $ADMIN_ROLE_NAME 2>/dev/null || echo "(deja attribue, on continue)"
+
 echo "Initialisation Keycloak terminee avec succes."

@@ -3,6 +3,7 @@ from fastmcp.server import create_proxy
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.rate_limiting import SlidingWindowRateLimitingMiddleware, RateLimitError
+from fastmcp.server.middleware import Middleware
 
 # --- Backend ciblé par le routage (serveur cible du Sprint 1-2) ---
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000/mcp")
@@ -60,6 +61,47 @@ def get_client_identity(context) -> str:
 
 
 mcp = create_proxy(BACKEND_URL, name="MCP Gateway - Sprint 6", auth=auth)
+
+# --- RBAC : controle d'acces par role (cahier des charges, autorisation) ---
+# Le JWTVerifier (ci-dessus) authentifie deja chaque requete (signature, issuer,
+# expiration) mais ne restreint rien selon le CONTENU du token. Ce middleware
+# ajoute la couche d'autorisation manquante : certains outils exigent un role
+# Keycloak precis (realm_access.roles), en plus d'un token simplement valide.
+TOOL_ROLE_REQUIREMENTS = {
+    "add": "mcp-admin",   # outil sensible : reserve aux utilisateurs avec le role mcp-admin
+    # "hello" : pas d'entree -> accessible a tout utilisateur authentifie (mcp-user)
+}
+
+
+class ToolRoleRequirementError(Exception):
+    """Levee quand le token authentifie n'a pas le role Keycloak requis pour l'outil demande."""
+    pass
+
+
+class ToolRoleRequirementMiddleware(Middleware):
+    """
+    Verifie, pour les outils listes dans TOOL_ROLE_REQUIREMENTS, que le token
+    JWT deja authentifie par JWTVerifier contient bien le role Keycloak requis.
+    """
+
+    async def on_call_tool(self, context, call_next):
+        tool_name = context.message.name
+        required_role = TOOL_ROLE_REQUIREMENTS.get(tool_name)
+
+        if required_role:
+            token = get_access_token()
+            roles = token.claims.get("realm_access", {}).get("roles", []) if token else []
+            if required_role not in roles:
+                identity = get_client_identity(context)
+                raise ToolRoleRequirementError(
+                    f"Accès refusé : l'outil '{tool_name}' nécessite le rôle "
+                    f"'{required_role}' (utilisateur '{identity}' ne le possède pas)."
+                )
+
+        return await call_next(context)
+
+
+mcp.add_middleware(ToolRoleRequirementMiddleware())
 
 class ToolCallRateLimitingMiddleware(SlidingWindowRateLimitingMiddleware):
     """
