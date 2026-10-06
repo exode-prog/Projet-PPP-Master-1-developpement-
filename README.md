@@ -107,6 +107,39 @@ docker exec mcp-vulnerable-server-HARDENED sh -c "cat /proc/version"
 
 Protocole complet : `docs/demo-attaque-contenue.md`.
 
+### Étape 7bis : Durcissement seccomp personnalisé + AppArmor (axe 1, cdc B.3/B.4/B.5) **[CLI]**
+
+En plus du profil seccomp par défaut de Docker, un profil **personnalisé** retire 22 syscalls supplémentaires (`ptrace`, `mount`, `umount2`, `reboot`, modules noyau, `bpf`, `process_vm_readv/writev`, etc.) et un profil **AppArmor** personnalisé restreint l'accès fichiers/réseau/capacités (`deny /etc/shadow`, `deny /root/**`, `deny /var/run/docker.sock`, `deny ptrace`, `deny capability`).
+
+```bash
+# Generer le profil seccomp durci (base : profil Docker par defaut)
+curl -L -o security/seccomp-default.json https://raw.githubusercontent.com/moby/moby/v25.0.0/profiles/seccomp/default.json
+python3 scripts/build_seccomp_hardened.py   # retire les syscalls dangereux -> security/seccomp-hardened.json
+
+# Charger le profil AppArmor dans le noyau hote
+sudo cp security/apparmor-mcp-vulnerable-hardened.profile /etc/apparmor.d/mcp-vulnerable-hardened
+sudo apparmor_parser -r /etc/apparmor.d/mcp-vulnerable-hardened
+sudo aa-status | grep mcp-vulnerable-hardened
+```
+
+Les deux profils sont référencés dans `docker-compose.vulnerable-hardened.yml` via `security_opt`.
+
+**Constat important** : sous `runtime: runsc` (gVisor), ces profils ne sont **pas évalués par le noyau hôte** — gVisor les rend inopérants car il intercepte les appels dans son propre espace utilisateur (le Sentry), sans déclencher les hooks seccomp/AppArmor classiques (confirmé par l'absence de logs `apparmor="DENIED"` malgré un accès réussi à `/etc/shadow`). Ils ont donc été validés séparément sous le runtime standard (`runc`) :
+
+```bash
+docker compose -f docker-compose.vulnerable-seccomp-apparmor-test.yml up -d --build
+
+# Ces trois commandes doivent echouer (BLOQUE) :
+docker exec mcp-vulnerable-server-SECCOMP-APPARMOR-TEST python3 -c "import ctypes; print(ctypes.CDLL('libc.so.6', use_errno=True).ptrace(0,0,0,0))"
+docker exec mcp-vulnerable-server-SECCOMP-APPARMOR-TEST mount -t tmpfs tmpfs /mnt
+docker exec mcp-vulnerable-server-SECCOMP-APPARMOR-TEST cat /etc/shadow
+
+# Confirmation dans les logs noyau
+sudo dmesg | grep "mcp-vulnerable-hardened"
+```
+
+Détails et nuance gVisor/runc : `docs/vulnerabilite-sprint3.md`.
+
 ### Étape 8 : k3s + OpenFaaS (prérequis axe 2)
 
 ```bash
