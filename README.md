@@ -123,6 +123,65 @@ Vérifié en conditions réelles sur LiveKit :
 
 Limite distincte, déjà documentée (Étape 4bis) : la répartition de charge sticky-session présente une fragilité préexistante et indépendante (`Session terminated` / erreurs occasionnelles sur la première requête d'une session) — observée à l'identique avant et après ce patch, donc non liée à l'anti-passthrough.
 
+### Étape 5quinquies : Intégralité des primitives MCP (cahier des charges A.2) **[CLI]**
+
+**Problème.** Le cahier des charges (A.2) exige explicitement l'implémentation de
+l'intégralité des primitives natives du protocole MCP. Un audit du code a montré que
+Resources et Prompts étaient déjà implémentés, mais que 4 primitives manquaient encore :
+Sampling, Roots, Logging et Completions.
+
+**Correctif.** Ajout dans `src/target_server/server.py`, de manière purement additive
+(aucune régression sur le code existant) :
+
+- **Logging** : ajout de `await ctx.info(...)` / `await ctx.debug(...)` dans les outils
+  `hello` et `add`. Ce sont des messages de protocole envoyés en direct au client pendant
+  l'exécution de l'outil, à distinguer du journal d'audit applicatif (`audit.py`,
+  `log_event()`) qui reste un fichier côté serveur, indépendant du protocole MCP.
+- **Roots** : nouvel outil `list_client_roots` qui interroge le client via
+  `await ctx.list_roots()` pour obtenir les répertoires que celui-ci déclare accessibles.
+- **Sampling** : nouvel outil `summarize_audit_log` qui inverse le flux habituel : c'est le
+  serveur MCP qui demande au LLM de l'hôte (via `await ctx.sample(...)`) de résumer les
+  dernières entrées du journal d'audit.
+- **Completions** : la resource fixe `config://server/security-status` est devenue une
+  resource template paramétrée `config://server/{section}` (sections `security-status` et
+  `version`), avec un gestionnaire d'auto-complétion enregistré via
+  `@mcp._mcp_server.completion()` (API bas niveau, FastMCP n'exposant pas encore de
+  décorateur haut niveau pour cette primitive).
+
+**Vérification empirique.**
+
+1. Script de test direct (`test_primitives.py`) exécutant successivement : lecture des deux
+   resources, récupération du prompt, appel de `hello` avec capture des logs côté client,
+   appel de `list_client_roots`, appel de `summarize_audit_log`, et une requête de
+   complétion sur `config://server/{section}` : les 8 primitives répondent correctement.
+2. Démonstration visuelle via MCP Inspector (`npx @modelcontextprotocol/inspector`) contre
+   `target-server-1` exposé temporairement (voir `docker-compose.demo-inspector.yml`) :
+   les onglets Tools, Prompts et Resources (avec la section Templates) affichent bien tous
+   les nouveaux éléments.
+
+**Note sur la démonstration via la gateway authentifiée.** MCP Inspector, dans la version
+installée pour ce projet, ne propose pas de champ pour fournir un en-tête
+`Authorization: Bearer <token>` lors de la création d'un serveur. La preuve du bon
+fonctionnement des primitives à travers la gateway sécurisée (RBAC, PKCE, anti-passthrough,
+audit) repose donc sur les scripts de test en ligne de commande, exécutés avec un véritable
+jeton Keycloak contre `http://localhost:9000/mcp` (voir Étape 5quater), qui constituent une
+preuve indépendante et reproductible de la couche de sécurité, complémentaire à la
+démonstration Inspector de la couche protocole MCP.
+
+Pour reproduire la démonstration Inspector à tout moment, sans jamais modifier
+`docker-compose.yml` :
+
+```bash
+# Activer temporairement l'exposition de target-server-1
+docker compose -f docker-compose.yml -f docker-compose.demo-inspector.yml up -d target-server-1
+
+# Lancer MCP Inspector
+npx @modelcontextprotocol/inspector
+
+# Revenir a l'etat securise normal (port non expose)
+docker compose -f docker-compose.yml up -d target-server-1
+```
+
 ### Étape 4bis : Répartition de charge (load balancing) **[CLI]**
 
 Le cdc B.4 exige que la gateway assure "la répartition de charge". Deux instances identiques du serveur cible (`target-server-1`, `target-server-2`) tournent derrière un répartiteur nginx (`target-lb`), avec un hachage sur l'en-tête `mcp-session-id` : une session donnée reste toujours sur la même instance (le protocole MCP est stateful), mais des sessions différentes se répartissent entre les deux.
