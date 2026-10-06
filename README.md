@@ -111,6 +111,18 @@ python3 scripts/test_pkce_flow.py invalid  # code_verifier errone  -> rejet expl
 # -> {"error":"invalid_grant","error_description":"PKCE verification failed: Code mismatch"}
 ```
 
+### Étape 5quater : Anti-token-passthrough (cahier des charges A.6) **[CLI]**
+
+Le cdc interdit explicitement le "transfert direct de jetons (token passthrough)". Par défaut, `create_proxy()` de FastMCP active `forward_incoming_headers=True` sur le client proxy interne : le JWT du client authentifié par le gateway était relayé tel quel vers `target-server`, qui ne le vérifie jamais lui-même (aucun `JWTVerifier` côté `target_server/server.py`). Ce jeton circulait donc sans utilité ni contrôle d'audience — l'anti-pattern que le cdc interdit.
+
+Corrigé dans `src/gateway/gateway.py` : construction manuelle du `FastMCPProxy` (au lieu de `create_proxy()`) avec `forward_incoming_headers=False` explicitement désactivé sur le client proxy interne. L'authentification/autorisation du client reste entièrement assurée par le gateway (`JWTVerifier` + RBAC), *avant* le relais vers `target-server` — ce changement ne touche que la dernière étape, interne, qui ne servait à rien.
+
+Vérifié en conditions réelles sur LiveKit :
+- **Non-régression** : RBAC (refus `testuser`/`add`, succès `adminuser`/`hello`) et quotas toujours fonctionnels après le patch.
+- **Preuve réseau** : log temporaire du header `Authorization` sur `target-lb` (nginx) pendant un appel authentifié — toutes les requêtes montrent `auth="-"` (vide), confirmant que le jeton n'atteint plus jamais `target-server`.
+
+Limite distincte, déjà documentée (Étape 4bis) : la répartition de charge sticky-session présente une fragilité préexistante et indépendante (`Session terminated` / erreurs occasionnelles sur la première requête d'une session) — observée à l'identique avant et après ce patch, donc non liée à l'anti-passthrough.
+
 ### Étape 4bis : Répartition de charge (load balancing) **[CLI]**
 
 Le cdc B.4 exige que la gateway assure "la répartition de charge". Deux instances identiques du serveur cible (`target-server-1`, `target-server-2`) tournent derrière un répartiteur nginx (`target-lb`), avec un hachage sur l'en-tête `mcp-session-id` : une session donnée reste toujours sur la même instance (le protocole MCP est stateful), mais des sessions différentes se répartissent entre les deux.

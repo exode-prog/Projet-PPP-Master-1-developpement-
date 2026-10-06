@@ -1,5 +1,7 @@
 import os
-from fastmcp.server import create_proxy
+from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
+from fastmcp.client.transports.http import StreamableHttpTransport
+from fastmcp.client.transports.sse import SSETransport
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware.rate_limiting import SlidingWindowRateLimitingMiddleware, RateLimitError
@@ -60,7 +62,18 @@ def get_client_identity(context) -> str:
     return token.claims.get("preferred_username") or token.claims.get("sub") or "inconnu"
 
 
-mcp = create_proxy(BACKEND_URL, name="MCP Gateway - Sprint 6", auth=auth)
+# Anti-token-passthrough (cahier des charges A.6) : create_proxy() force
+# forward_incoming_headers=True, ce qui relaierait tel quel le JWT du client
+# vers target-server (jamais verifie la-bas). On construit donc nous-memes
+# le ProxyClient pour desactiver explicitement ce forward.
+_base_proxy_client = ProxyClient(BACKEND_URL)
+if isinstance(_base_proxy_client.transport, (StreamableHttpTransport, SSETransport)):
+    _base_proxy_client.transport.forward_incoming_headers = False
+
+def _proxy_client_factory():
+    return _base_proxy_client.new()
+
+mcp = FastMCPProxy(client_factory=_proxy_client_factory, name="MCP Gateway - Sprint 6", auth=auth)
 
 # --- RBAC : controle d'acces par role (cahier des charges, autorisation) ---
 # Le JWTVerifier (ci-dessus) authentifie deja chaque requete (signature, issuer,
