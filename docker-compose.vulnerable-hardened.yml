@@ -15,6 +15,12 @@ services:
     container_name: mcp-vulnerable-server-HARDENED
     runtime: runsc                    # gVisor : isolation du runtime
     restart: "no"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+          pids: 256
     ports:
       - "127.0.0.1:8002:8002"         # port différent de la version non protégée (8001)
     environment:

@@ -62,6 +62,12 @@ services:
       - KEYCLOAK_URL=http://keycloak:8080
       - KEYCLOAK_REALM=mcp-secure-platform
       - KEYCLOAK_CLIENT_ID=mcp-target-server
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+          pids: 256
     restart: unless-stopped
     networks:
       - mcp-net
@@ -83,6 +89,12 @@ services:
       - MCP_PORT=9000
       - QUOTA_MAX_CALLS=5
       - QUOTA_WINDOW_MINUTES=1
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+          pids: 256
     ports:
       - "127.0.0.1:9000:9000"
     restart: unless-stopped
