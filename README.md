@@ -2,68 +2,61 @@
 
 Projet Transversal : Isolation par sandbox, architecture serverless et orchestration cloud.
 
-Ce projet construit une plateforme d'exécution sécurisée pour des serveurs MCP (Model Context Protocol) : un environnement qui permet de faire tourner du code tiers potentiellement non fiable, sans risquer de compromettre la machine hôte, en combinant isolation (sandbox), exécution à la demande (serverless) et un point d'entrée centralisé (gateway).
+Plateforme d'exécution sécurisée pour serveurs MCP (Model Context Protocol) : exécuter du code tiers non fiable sans compromettre l'hôte, via sandbox, exécution à la demande (serverless) et point d'entrée centralisé (gateway).
 
 ## Vue d'ensemble
 
-Partie A — Socle commun MCP : un serveur MCP conforme au protocole (Tools, Resources, Prompts), sécurisé par OAuth 2.1 / Keycloak.
+**Partie A : Socle commun MCP** : serveur MCP conforme au protocole (Tools, Resources, Prompts), sécurisé par OAuth 2.1 / Keycloak.
 
-Partie B — Spécialité Virtualisation et Cloud :
+**Partie B : Virtualisation et Cloud** :
 - Axe 1 : Sandbox et isolation du runtime (gVisor)
 - Axe 2 : Architecture serverless et cycle de vie éphémère (k3s, OpenFaaS, LocalStack)
 - Axe 3 : Orchestration et gateway d'accès (gateway FastMCP maison)
 
-Démonstration centrale du projet : scénario "attaque contenue" — un serveur MCP volontairement vulnérable est attaqué sans protection (compromission totale), puis avec la plateforme activée (attaque bloquée et contenue). Détail complet : `docs/demo-attaque-contenue.md`.
+**Démo centrale** : "attaque contenue"  serveur MCP vulnérable attaqué sans protection (compromission totale) puis avec la plateforme (attaque bloquée/contenue). Détail : `docs/demo-attaque-contenue.md`.
 
-## Démarrage rapide — reproduire exactement le même environnement
+## Démarrage rapide
 
-Ces étapes partent d'une machine Linux (Ubuntu recommandé) **sans aucun prérequis déjà installé**. Chaque étape donne la commande d'installation si l'outil est absent, puis la commande de vérification. Suivre l'ordre : chaque étape dépend de la précédente.
+Machine Linux (Ubuntu) sans prérequis. Suivre l'ordre, chaque étape dépend de la précédente. **[CLI]** = terminal, **[GUI]** = navigateur.
 
-Chaque test est marqué **[CLI]** (ligne de commande, terminal) ou **[GUI]** (interface graphique, navigateur) — certains ont les deux.
-
-### Étape 1 — Cloner le dépôt
+### Étape 1 : Cloner
 
 ```bash
 git clone https://github.com/exode-prog/Projet-PPP-Master-1-developpement-.git
 cd Projet-PPP-Master-1-developpement-
 ```
 
-### Étape 2 — Installer Docker
+### Étape 2 : Docker
 
 ```bash
 curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker $USER
-newgrp docker   # ou se déconnecter/reconnecter pour appliquer le groupe
-docker --version
-docker compose version
+newgrp docker
+docker --version && docker compose version
 ```
 
-### Étape 3 — Installer Node.js via nvm (nécessaire pour MCP Inspector, tests [GUI])
+### Étape 3 : Node.js (pour MCP Inspector)
 
 ```bash
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
 source ~/.bashrc
 nvm install 22
-node --version
-npm --version
 ```
 
-### Étape 4 — Lancer la plateforme principale (axe 3 : gateway + Keycloak)
+### Étape 4 : Plateforme principale (axe 3 : gateway + Keycloak)
 
 ```bash
 docker compose up -d
-docker ps   # vérifier que keycloak, mcp-gateway, mcp-target-server sont "Up"/"healthy"
+docker ps   # keycloak, mcp-gateway, mcp-target-server doivent être Up/healthy
 ```
 
-Le premier démarrage initialise automatiquement le royaume Keycloak (`scripts/keycloak_init.sh`), le client `mcp-target-server` et un utilisateur de test (`testuser`). Keycloak met ~20 secondes à devenir `healthy`.
+Keycloak s'initialise seul (`scripts/keycloak_init.sh`) et peut mettre jusqu'à 2-3 min à devenir `healthy` sur machine chargée. Si `dependency failed to start: container keycloak is unhealthy` apparaît, attendre `healthy` dans `docker ps` puis relancer `docker compose up -d`.
 
-> Sur une machine plus chargée, Keycloak peut mettre bien plus de 20 secondes (jusqu'à 2-3 minutes observées) à devenir `healthy`. Si le premier `docker compose up -d` échoue avec `dependency failed to start: container keycloak is unhealthy`, ce n'est pas un vrai échec : Keycloak continue de démarrer en arrière-plan. Vérifier avec `docker ps` qu'il devient `healthy`, puis relancer `docker compose up -d`.
-
-### Étape 5 — Tester l'authentification : axe 3 **[CLI obligatoire + GUI optionnel]**
+### Étape 5 : Authentification : axe 3 **[CLI]**
 
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8080/realms/mcp-secure-platform/protocol/openid-connect/token \
-  -d "client_id=mcp-target-server" -d "client_secret=<voir scripts/keycloak_init.sh>" \
+  -d "client_id=mcp-target-server" -d "client_secret=$(sed -n '9p' scripts/keycloak_init.sh | grep -oP ':-\K[^}]+')" \
   -d "grant_type=password" -d "username=testuser" -d "password=test1234" \
   | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
 
@@ -73,56 +66,50 @@ curl -X POST http://127.0.0.1:9000/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
 ```
 
-Une réponse `"serverInfo":{"name":"MCP Gateway - Sprint 6"...}` confirme que l'axe 3 fonctionne. **Ce test CLI est la preuve retenue et documentée**, car reproductible et scriptable.
+Réponse `"serverInfo":{"name":"MCP Gateway - Sprint 6"...}` = axe 3 validé.
 
-Un test **[GUI]** complémentaire est possible, mais seulement comme démonstration ponctuelle : juste après avoir obtenu `$TOKEN` ci-dessus, le coller dans le champ **Headers** de MCP Inspector (`Authorization: Bearer <valeur de $TOKEN>`) avant de se connecter à `http://127.0.0.1:9000/mcp`. Ce champ n'étant pas sauvegardé entre deux rechargements de page, il faut ressaisir le jeton à chaque session — ce qui le rend impropre comme preuve documentée, mais utilisable pour une démo live.
+**[GUI]** optionnel : coller `Authorization: Bearer <TOKEN>` dans Headers de MCP Inspector avant connexion à `http://127.0.0.1:9000/mcp` (non persistant entre rechargements, démo ponctuelle seulement).
 
-### Étape 6 — Installer gVisor (prérequis axe 1)
-
-**Note (testé le 2026-10-04) :** l'ancien téléchargement manuel du binaire `runsc` seul (`storage.googleapis.com/.../release/latest/`) ne fonctionne plus — gVisor a changé son format de distribution (le binaire seul ne suffit plus, il lui faut des "sidecar binaries" désormais fournis séparément). La méthode par dépôt APT ci-dessous est la méthode officielle recommandée et a été testée avec succès :
+### Étape 6 : gVisor (prérequis axe 1)
 
 ```bash
 sudo apt-get update && sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
-
 curl -fsSL https://gvisor.dev/archive.key | sudo gpg --yes --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" | sudo tee /etc/apt/sources.list.d/gvisor.list > /dev/null
-
 sudo apt-get update && sudo apt-get install -y runsc
-sudo runsc install   # enregistre automatiquement le runtime "runsc" dans Docker (ne pas utiliser /usr/local/bin/runsc : le paquet apt installe dans /usr/bin, contrairement à ce qu'indique la doc officielle)
+sudo runsc install
 sudo systemctl reload docker
-
-docker run --rm --runtime=runsc hello-world   # preuve fonctionnelle, pas seulement listée
+docker run --rm --runtime=runsc hello-world
 docker info | grep -A2 Runtimes   # doit lister "runsc"
 ```
 
-Source officielle : https://gvisor.dev/docs/user_guide/install
+Source : https://gvisor.dev/docs/user_guide/install
 
-### Étape 7 — Démo sandbox : axe 1, standard vs gVisor **[CLI + GUI]**
+### Étape 7 : Démo sandbox : axe 1 **[CLI + GUI]**
 
 ```bash
 docker compose -f docker-compose.vulnerable.yml up -d
 docker compose -f docker-compose.vulnerable-hardened.yml up -d
 ```
 
-**Ne jamais lancer ces deux composes en dehors d'un réseau isolé ni les fusionner avec `docker-compose.yml`** — voir `src/vulnerable_server/README.md`.
+IMPORTANT: Ne jamais lancer en dehors d'un réseau isolé ni fusionner avec `docker-compose.yml` : voir `src/vulnerable_server/README.md`.
 
-- **[GUI]** Démo via MCP Inspector (voir étape 10 pour le lancement) : exploiter l'injection de commande sur l'outil `ping_host`, comparer serveur sans protection (port 8001) vs serveur durci (port 8002). Payload de test : `127.0.0.1; whoami; id` (compromission) ou `127.0.0.1; cat /proc/version` (preuve d'exposition noyau).
-- **[CLI]** Vérification complémentaire des capacités effectives et de l'exposition noyau :
+- **[GUI]** Via MCP Inspector (étape 10) : outil `ping_host` sur port 8001 (sans protection) vs port 8002 (durci gVisor).
+- **[CLI]** Vérification :
 ```bash
-  docker exec mcp-vulnerable-server-UNSAFE sh -c "cat /proc/1/status | grep CapEff"
-  docker exec mcp-vulnerable-server-HARDENED sh -c "cat /proc/1/status | grep CapEff"
-  docker exec mcp-vulnerable-server-UNSAFE sh -c "cat /proc/version"
-  docker exec mcp-vulnerable-server-HARDENED sh -c "cat /proc/version"
+docker exec mcp-vulnerable-server-UNSAFE sh -c "cat /proc/1/status | grep CapEff"
+docker exec mcp-vulnerable-server-HARDENED sh -c "cat /proc/1/status | grep CapEff"
+docker exec mcp-vulnerable-server-UNSAFE sh -c "cat /proc/version"
+docker exec mcp-vulnerable-server-HARDENED sh -c "cat /proc/version"
 ```
 
-Protocole complet et résultats de référence : `docs/demo-attaque-contenue.md`.
+Protocole complet : `docs/demo-attaque-contenue.md`.
 
-### Étape 8 — Installer k3s et OpenFaaS (prérequis axe 2)
+### Étape 8 : k3s + OpenFaaS (prérequis axe 2)
 
 ```bash
 curl -sfL https://get.k3s.io | sh -
 
-# Configurer l'acces kubectl pour l'utilisateur courant (k3s.yaml n'est lisible que par root par defaut)
 mkdir -p ~/.kube
 sudo k3s kubectl config view --raw > ~/.kube/config
 chmod 600 ~/.kube/config
@@ -130,62 +117,43 @@ export KUBECONFIG=~/.kube/config
 echo 'export KUBECONFIG=~/.kube/config' >> ~/.bashrc
 
 curl -sLS https://get.arkade.dev | sh
-# Si l'installation automatique dans /usr/local/bin echoue (permissions), repli manuel :
-sudo cp arkade /usr/local/bin/arkade
-sudo ln -sf /usr/local/bin/arkade /usr/local/bin/ark
-rm -f arkade
-arkade version   # verifier que la commande est bien disponible
+sudo cp arkade /usr/local/bin/arkade && sudo ln -sf /usr/local/bin/arkade /usr/local/bin/ark && rm -f arkade
 
-# --set openfaasPro=false --operator=false : evite l'installation par defaut de l'edition Pro (necessite une licence)
 arkade install openfaas --set openfaasPro=false --operator=false
 ```
 
-> Si OpenFaaS est deja installe sur le cluster (reinstallation), `arkade install openfaas` peut echouer avec une erreur Helm du type `cannot patch "openfaas-prometheus" ... roleRef: cannot change roleRef` (contrainte d'immuabilite RBAC Kubernetes sur `RoleBinding.roleRef`). Ceci n'affecte pas une premiere installation sur machine vierge. En cas d'echec sur une installation existante : `helm history openfaas -n openfaas` puis `helm rollback openfaas <revision precedente> -n openfaas`.
+`--set openfaasPro=false --operator=false` est obligatoire (sinon édition Pro bloquée faute de licence).
 
-### Étape 9 — Démo serverless : axe 2 **[CLI + GUI]**
+### Étape 9 : Démo serverless : axe 2 **[CLI + GUI]**
 
-- **[CLI]** (preuve retenue et documentée, testée et confirmée) :
 ```bash
-  # Le service gateway est ClusterIP (pas de NodePort) : un port-forward actif est requis
-  kubectl port-forward -n openfaas svc/gateway 31112:8080 > /tmp/pf-gateway.log 2>&1 &
-  disown
-  sleep 3
+kubectl port-forward -n openfaas svc/gateway 31112:8080 > /tmp/pf-gateway.log 2>&1 &
+disown
+sleep 3
+export OPENFAAS_URL=http://127.0.0.1:31112
 
-  export OPENFAAS_URL=http://127.0.0.1:31112
+arkade get faas-cli
+sudo mv ~/.arkade/bin/faas-cli /usr/local/bin/ 2>/dev/null || true
 
-  # Installer faas-cli si absent (arkade peut echouer a le placer dans le PATH)
-  arkade get faas-cli
-  sudo mv ~/.arkade/bin/faas-cli /usr/local/bin/ 2>/dev/null || true
-
-  PASSWORD=$(kubectl get secret -n openfaas basic-auth -o jsonpath="{.data.basic-auth-password}" | base64 --decode)
-  faas-cli login --gateway $OPENFAAS_URL -u admin -p "$PASSWORD"
-
-  # Le template python3-http n'est pas inclus dans le pull generique, il vient du template store
-  faas-cli template store pull python3-http
-
-  faas-cli deploy -f stack.yaml --gateway $OPENFAAS_URL
-  curl -X POST $OPENFAAS_URL/function/mcp-server-function -d '{}'
+PASSWORD=$(kubectl get secret -n openfaas basic-auth -o jsonpath="{.data.basic-auth-password}" | base64 --decode)
+faas-cli login --gateway $OPENFAAS_URL -u admin -p "$PASSWORD"
+faas-cli template store pull python3-http
+faas-cli deploy -f stack.yaml --gateway $OPENFAAS_URL
+curl -X POST $OPENFAAS_URL/function/mcp-server-function -d '{}'
 ```
 
-- **[GUI]** (testé et confirmé le 2026-10-04) : OpenFaaS fournit un portail web accessible sur l'URL du gateway, permettant de voir les fonctions déployées et de les invoquer avec un payload texte, derrière une authentification basique :
-```bash
-  PASSWORD=$(kubectl get secret -n openfaas basic-auth -o jsonpath="{.data.basic-auth-password}" | base64 --decode)
-  echo "Utilisateur: admin / Mot de passe: $PASSWORD"
-  # Ouvrir http://127.0.0.1:31112/ui/ dans un navigateur et se connecter avec ces identifiants
-```
-  La fonction `mcp-server-function` apparaît dans la liste ; cliquer dessus permet de l'invoquer directement depuis l'interface (bouton "Invoke").
+**[GUI]** : ouvrir `http://127.0.0.1:31112/ui/` avec `admin` / `$PASSWORD` ci-dessus, invoquer `mcp-server-function` depuis l'interface.
 
-### Étape 9bis — Démo complémentaire : cycle éphémère automatique via LocalStack **[CLI]**
+### Étape 9bis : Cycle éphémère automatique via LocalStack **[CLI]**
 
-Contrairement à OpenFaaS (scale manuel), LocalStack émule le runtime AWS Lambda officiel et démontre un cycle de vie réellement automatique (création à l'invocation, destruction après inactivité, sans intervention). Détail et limite d'OpenFaaS à ce sujet : `docs/axe2-scale-to-zero.md`.
+Contrairement à OpenFaaS (scale manuel), LocalStack émule AWS Lambda avec un cycle de vie réellement automatique. Détail : `docs/axe2-scale-to-zero.md`.
 
-> `.env.localstack` (ignoré par git) est **obligatoire** avec les versions récentes de l'image `localstack/localstack:latest` : sans `LOCALSTACK_AUTH_TOKEN` valide, le conteneur refuse de démarrer (`License activation failed!`). Créer un compte gratuit sur https://app.localstack.cloud, récupérer un token, puis `echo "LOCALSTACK_AUTH_TOKEN=<votre_token>" > .env.localstack` — LocalStack active automatiquement une licence d'essai ("trial") et démarre normalement. *(Correction : une version antérieure de ce README indiquait ce token comme optionnel ; ce n'est plus le cas avec les images récentes.)*
+`.env.localstack` (ignoré par git) **obligatoire** : compte gratuit sur https://app.localstack.cloud, puis `echo "LOCALSTACK_AUTH_TOKEN=<token>" > .env.localstack`.
 
 ```bash
 docker compose -f docker-compose.localstack.yml up -d
 sleep 10
 
-# Credentials factices requis par awslocal/boto3 (sinon tentative de contacter le service de metadonnees EC2, qui bloque)
 export AWS_ACCESS_KEY_ID=test
 export AWS_SECRET_ACCESS_KEY=test
 export AWS_DEFAULT_REGION=us-east-1
@@ -196,60 +164,43 @@ awslocal lambda create-function \
   --zip-file fileb://localstack-lambda/function.zip \
   --role arn:aws:iam::000000000000:role/lambda-role
 
-# Attendre l'état Active avant d'invoquer (la fonction reste "Pending" quelques secondes)
 for i in {1..15}; do
   STATE=$(awslocal lambda get-function --function-name mcp-lambda-function --query 'Configuration.State' --output text)
   [ "$STATE" = "Active" ] && break
   sleep 2
 done
 
-docker ps   # avant : seuls localstack-mcp et local-registry
+docker ps   # avant
 awslocal lambda invoke --function-name mcp-lambda-function output.json
 cat output.json
-docker ps   # après : un conteneur public.ecr.aws/lambda/python:3.12 est apparu
+docker ps   # après : conteneur public.ecr.aws/lambda/python:3.12 présent
 
-# Laisser tourner sans ré-invoquer pour observer la disparition automatique (~20 min)
-watch -n 5 docker ps
+watch -n 5 docker ps   # observer la disparition automatique (~20 min)
 ```
 
-### Étape 10 — Démonstration visuelle **[GUI]** (MCP Inspector)
+### Étape 10 : Démonstration visuelle **[GUI]** (MCP Inspector)
 
 ```bash
 npx @modelcontextprotocol/inspector
 ```
 
-Ouvrir l'URL affichée dans un navigateur. Par défaut, l'écran d'accueil affiche des **serveurs d'exemple préconfigurés** (filesystem, everything, example-server) et non une connexion vide : cliquer sur **« Ajouter des serveurs »** (Add servers) pour configurer manuellement une nouvelle connexion. Choisir le transport **Streamable HTTP** et se connecter sur `http://127.0.0.1:8001/mcp` (sans protection) ou `http://127.0.0.1:8002/mcp` (durci gVisor) pour la démo de l'axe 1. Pour l'axe 3, voir la note GUI optionnelle de l'étape 5.
+Cliquer **« Ajouter des serveurs »** (l'accueil affiche des serveurs d'exemple préconfigurés, pas un état vide). Transport **Streamable HTTP** → `http://127.0.0.1:8001/mcp` (sans protection) ou `http://127.0.0.1:8002/mcp` (durci).
 
 ### Étape 11 (optionnelle) — Ollama comme hôte MCP autonome
 
-Complément à MCP Inspector (A.5 du cahier des charges) : un LLM local exécute les appels d'outils à la place d'un humain. Non requis pour valider la plateforme.
+Complément à MCP Inspector (A.5). Démontre le consentement humain (HIL) avant exécution d'outil.
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ollama pull qwen2.5:3b
-python3 -m venv MCP-PPP
-source MCP-PPP/bin/activate
+python3 -m venv MCP-PPP && source MCP-PPP/bin/activate
 pip install mcp-client-for-ollama
 ollmcp -u http://127.0.0.1:8001/mcp -m qwen2.5:3b
 ```
 
-Une fois connecté, ollmcp ouvre une invite interactive. Taper la question suivante (en langage naturel, c'est le modèle qui construit lui-même l'appel à l'outil `ping_host`) :
-Peux-tu vérifier si l'hôte 127.0.0.1; whoami; id est joignable ?
+ollmcp demande confirmation (`Allow this tool call? [y/n]`) avant tout appel d'outil — c'est le consentement explicite exigé par le cdc A.6. Détail : `docs/demo-ollama.md`.
 
-Avant d'exécuter quoi que ce soit, ollmcp affiche l'appel d'outil que le modèle a construit et demande une confirmation humaine (HIL — Human-In-the-Loop) :
-Tool call: ping_host
-Arguments: {"hostname": "127.0.0.1; whoami; id"}
-Allow this tool call? [y/n]
-
-Répondre `y` pour autoriser l'exécution (ou `n` pour l'annuler — c'est ce blocage qui matérialise le "consentement explicite de l'utilisateur" exigé par le cahier des charges, partie A.6). Une fois confirmé, la réponse de l'outil s'affiche :
-root
-uid=0(root) gid=0(root) groups=0(root)
-
-Ceci confirme deux choses à la fois : que le modèle a transmis la commande d'injection sans la filtrer (il suit l'instruction de l'utilisateur telle quelle), et que la validation humaine (HIL) intervient bien avant toute exécution réelle — sans ce `y`, la commande n'aurait pas été lancée.
-
-Détail et transcript de référence : `docs/demo-ollama.md`.
-
-### Tout arrêter proprement
+### Tout arrêter
 
 ```bash
 docker compose down
@@ -257,129 +208,48 @@ docker compose -f docker-compose.vulnerable.yml down
 docker compose -f docker-compose.vulnerable-hardened.yml down
 ```
 
-## Structure du dépôt
-
-### Documentation technique (`docs/`)
+## Structure du dépôt : Documentation technique (`docs/`)
 
 | Document | Contenu |
 |---|---|
-| `gateway-sprint6.md` | Conteneurisation de la gateway, bugs rencontres et corriges |
-| `vulnerabilite-sprint3.md` | La vulnerabilite CWE-78 du serveur cible |
+| `gateway-sprint6.md` | Conteneurisation de la gateway |
+| `vulnerabilite-sprint3.md` | Vulnérabilité CWE-78 du serveur cible |
 | `comparatif-gvisor-firecracker.md` | Comparaison technologique sandbox |
-| `demo-attaque-contenue.md` | Preuve empirique complete du scenario B.2 |
-| `demo-ollama.md` | Démonstration Ollama/ollmcp comme hôte MCP autonome |
-| `no-egress-sprint5.md` | Limitation connue de la NetworkPolicy k3s |
-| `integration-3-axes.md` | Comment les 3 axes s'articulent (architecture Option A) |
-| `axe2-scale-to-zero.md` | Investigation scale-to-zero (OpenFaaS vs Knative vs LocalStack), causes racines |
-| `tco.md` | Calcul du cout reel (TCO), sourcé |
-| `sprint7-finalisation.md` | Synthese du sprint de finalisation |
+| `demo-attaque-contenue.md` | Preuve empirique du scénario B.2 |
+| `demo-ollama.md` | Démo Ollama/ollmcp |
+| `no-egress-sprint5.md` | Limitation NetworkPolicy k3s |
+| `integration-3-axes.md` | Articulation des 3 axes |
+| `axe2-scale-to-zero.md` | Investigation scale-to-zero |
+| `tco.md` | Calcul du coût réel (TCO), sourcé |
+| `sprint7-finalisation.md` | Synthèse finalisation |
 
-## Pour les contributeurs — Configurer son environnement de développement
-
-Chers collègues de EC2LT : Docker, Node.js et gVisor sont couverts dans "Démarrage rapide" ci-dessus. Les étapes suivantes ne concernent que le développement du code Python du projet (pas nécessaire pour juste lancer et tester la plateforme).
-
-### 1. Outils système (Ubuntu 24)
+## Développement (contributeurs)
 
 ```bash
-sudo apt update
-sudo apt install git python3-venv -y
+sudo apt update && sudo apt install git python3-venv -y
+python3 -m venv MCP-PPP && source MCP-PPP/bin/activate
+pip install --upgrade pip && pip install fastmcp
 ```
-
-### 2. Environnement Python
-
-```bash
-python3 -m venv MCP-PPP
-source MCP-PPP/bin/activate
-pip install --upgrade pip
-pip install fastmcp
-```
-
-### 3. Vérifier que tout fonctionne
-
-```bash
-git --version
-docker --version
-docker compose version
-python3 --version
-fastmcp --version
-node --version
-npm --version
-ollama --version   # si installé (étape 11, optionnelle)
-```
-
-## Bonnes pratiques de l'équipe
-
-Ne jamais travailler avec le compte root sur la machine de développement. Le projet repose sur le principe de moindre privilège ; travailler avec un utilisateur standard est cohérent avec cette philosophie dès le développement.
-
-Ne jamais committer de token, mot de passe ou secret. Le fichier `.env` est ignoré par Git ; utiliser `.env.example` comme modèle.
-
-## Authentification GitHub
-
-GitHub n'accepte plus les mots de passe classiques en ligne de commande. Chaque membre de l'équipe doit créer son propre token personnel :
-
-1. Aller sur https://github.com/settings/tokens
-2. Generate new token, classic
-3. Cocher uniquement le scope `repo`
-4. Copier le token et l'utiliser comme mot de passe lors du premier `git push`
-
-Pour éviter de ressaisir le token à chaque fois :
-
-```bash
-git config --global credential.helper store
-```
-
-## Document de référence
-
-En cas de blocage, j'ai partagé mon fichier docx ici, ça peut vous aider :
-https://docs.google.com/document/d/1XvrIbPh8w_J7UX1EusB-1BuBKecIPWpmOzRJd9BoSaU/edit?usp=sharing
 
 ## Difficultés et limites rencontrées
 
-Par souci de transparence (et conformément à la méthodologie du projet : vérifier avant de conclure), voici les principales difficultés rencontrées et comment elles ont été traitées — aucune n'a été contournée en silence.
+| Difficulté | Traitement |
+|---|---|
+| Scale-to-zero OpenFaaS indisponible (édition Pro uniquement) | Cycle manuel (`spawn.sh`/`teardown.sh`) + preuve via LocalStack. `docs/axe2-scale-to-zero.md` |
+| Knative : bug DNS bloquant chronique | Abandonné et documenté avec cause racine. `docs/axe2-scale-to-zero.md` |
+| NetworkPolicy no-egress non supportée par Flannel (CNI k3s) | Limitation assumée, isolation reposant sur la séparation réseau Docker de l'axe 1. `docs/no-egress-sprint5.md` |
+| Keycloak `Exited (255)` sans trace applicative | Diagnostiqué par élimination, relancé et revalidé |
+| Variabilité mesure cold-start gVisor (6,8%–120%) | Présenté comme plage mesurée, pas un chiffre unique. `docs/tco.md` |
+| Headers non persistants dans MCP Inspector | Auth documentée en test CLI obligatoire (curl), GUI pour démo ponctuelle seulement |
+| Proxy serverless : réponse statique, pas de vraie session MCP relayée | Docstring corrigé, portée clarifiée comme preuve de concept |
+| Install gVisor : ancien binaire seul obsolète (404), doc officielle imprécise sur le chemin | Méthode APT substituée, chemin vérifié (`dpkg -L runsc`) et testé fonctionnellement |
+| arkade échoue parfois à s'installer dans `/usr/local/bin` | Repli manuel documenté (Étape 8) |
+| Réinstallation OpenFaaS : conflit RBAC Helm (`roleRef` immuable) | Rollback Helm vers révision stable |
+| Keycloak healthcheck trop court sur machine chargée | Pas un échec réel ; relancer `docker compose up -d` une fois `healthy` |
+| Kubeconfig root-only | Copié vers `~/.kube/config` (Étape 8) |
+| arkade installe OpenFaaS Pro par défaut | `--set openfaasPro=false --operator=false` obligatoire |
+| `awslocal` nécessite un vrai `aws` CLI | `pip install awscli` en complément de `awscli-local` |
+| `.env.localstack` devenu obligatoire avec l'image `:latest` | Corrigé à l'Étape 9bis après preuve empirique sur 2e machine |
+| MCP Inspector affiche des serveurs d'exemple par défaut | Clarifié à l'Étape 10 : cliquer « Ajouter des serveurs » |
 
-| Difficulté | Constat | Traitement |
-|---|---|---|
-| Scale-to-zero OpenFaaS indisponible | Fonctionnalité réservée à l'édition Pro, confirmé par la doc officielle et reconfirmé empiriquement (déploiement actif sans interruption sur plusieurs jours) | Cycle de vie manuel retenu (`spawn.sh`/`teardown.sh`) ; preuve du concept via LocalStack à la place. Détail : `docs/axe2-scale-to-zero.md` |
-| Knative comme alternative à OpenFaaS | Bug DNS chronique et bloquant (`activator` → `autoscaler`), 28 échecs reproductibles sur 144 minutes, 4 hypothèses testées et éliminées | Piste abandonnée et documentée avec sa cause racine plutôt que masquée. Détail : `docs/axe2-scale-to-zero.md` |
-| NetworkPolicy no-egress (axe 2) | Définie (`no-egress-policy.yaml`) mais non appliquée en pratique : le CNI Flannel par défaut de k3s ne supporte pas les NetworkPolicy | Limitation assumée et documentée (`docs/no-egress-sprint5.md`) ; isolation réseau du projet reposant sur la séparation des réseaux Docker de l'axe 1 |
-| Interruption silencieuse de Keycloak | Conteneur trouvé `Exited (255)` sans trace d'erreur applicative, probablement liée à un redémarrage VM/Docker externe au projet | Diagnostiqué par élimination (`docker inspect`, logs horodatés) plutôt que supposé être un bug de code ; relancé et revalidé de bout en bout |
-| Variabilité de mesure du cold-start gVisor | Trois mesures indépendantes ont donné des écarts importants (6,8 % à 120 % de surcoût CPU) selon le délai avant mesure | Présenté honnêtement comme une plage et non un chiffre unique, avec la cause probable documentée (`docs/tco.md`) plutôt qu'un chiffre choisi arbitrairement |
-| Champ Headers non persistant dans MCP Inspector | Le champ existe bien (recherché et confirmé, contrairement à une hypothèse initiale erronée) mais sa valeur n'est pas sauvegardée entre rechargements de page | Authentification documentée comme test CLI obligatoire (`curl`) ; GUI utilisable seulement en démonstration ponctuelle |
-| Proxy serverless incomplet | Le handler OpenFaaS renvoie une confirmation statique plutôt que de relayer une vraie session MCP, alors que son docstring initial le suggérait | Docstring corrigé pour rester fidèle au code ; portée du test clarifiée comme preuve de concept du mécanisme serverless, pas une intégration fonctionnelle axe 1/2/3 |
-| Installation gVisor obsolète dans le README initial | Le téléchargement manuel du binaire `runsc` seul (404 sur l'ancienne URL) ne fonctionne plus ; la doc officielle elle-même indique un chemin incorrect (`/usr/local/bin/runsc` au lieu de `/usr/bin/runsc` réellement utilisé par le paquet apt) | Détecté lors du test de reproductibilité complet sur un clone neuf (`docs/README : méthode APT substituée, chemin corrigé après vérification avec `dpkg -L runsc` et test fonctionnel réel (`docker run --runtime=runsc hello-world`) |
-| Installation arkade incomplète | Le script d'installation telecharge le binaire mais echoue parfois a l'installer dans /usr/local/bin (permissions), laissant la commande introuvable | Repli manuel documente a l'Étape 8 (copie + lien symbolique), confirme fonctionnel lors du test de reproductibilite |
-| Réinstallation OpenFaaS en conflit RBAC | Reinstaller OpenFaaS sur un cluster ou il est deja deploye declenche un upgrade Helm qui echoue (contrainte d'immuabilite sur le roleRef d'un RoleBinding), laissant des pods en CrashLoopBackOff en parallele des pods stables | Diagnostique via l'historique Helm et l'etat des pods (pas de supposition), corrige par un rollback Helm vers la revision stable precedente (5 pods Running restaures) ; n'invalide pas la commande pour une premiere installation sur machine vierge |
-| Keycloak healthcheck trop court sur machine chargée | Compose abandonne l'attente de `healthy` après ~183s alors que Keycloak termine réellement son démarrage à 90-95s sur une machine chargée (JVM/Quarkus), provoquant `dependency failed to start: container keycloak is unhealthy` | Pas un vrai échec : vérifié via `docker logs keycloak` montrant un démarrage réussi après le timeout ; corrigé en documentant qu'il suffit de relancer `docker compose up -d` une fois `docker ps` affichant `healthy` |
-| Permissions kubeconfig non-root | `/etc/rancher/k3s/k3s.yaml` est lisible uniquement par root par défaut, rendant `kubectl`/`helm` inutilisables pour un utilisateur non-root (erreur masquée en `kubernetes cluster unreachable`) | Diagnostiqué via `sudo k3s kubectl get nodes` fonctionnant alors que `kubectl get nodes` échouait ; corrigé par la copie du kubeconfig vers `~/.kube/config` documentée à l'Étape 8 |
-| arkade installe OpenFaaS Pro par défaut | `arkade install openfaas` génère une commande Helm avec `openfaasPro=true`, bloquant gateway/dashboard/autoscaler en `FailedMount` faute du secret `openfaas-license` | Corrigé par `--set openfaasPro=false --operator=false` (les deux flags sont nécessaires), confirmé via les logs du `queue-worker` affichant "Community Edition" |
-| `awslocal` nécessite un vrai binaire `aws` | `awslocal` est un wrapper qui échoue silencieusement (`[Errno 2] No such file or directory: b'/snap/bin/aws'`) si aucun `aws` CLI réel n'est présent dans le PATH | Diagnostiqué via `which -a aws` et `snap list aws-cli` ; corrigé par `python3 -m pip install awscli` en complément de `awscli-local` |
-| `.env.localstack` devenu obligatoire avec l'image `:latest` | Une conclusion précédente de ce README indiquait ce fichier comme optionnel (Pro uniquement) ; une image `localstack/localstack:latest` plus récente refuse désormais de démarrer sans `LOCALSTACK_AUTH_TOKEN` valide (`License activation failed!`) | Conclusion précédente invalidée par preuve empirique sur une seconde machine et corrigée à l'Étape 9bis plutôt que maintenue par confort |
-| MCP Inspector affiche des serveurs d'exemple par défaut | L'écran d'accueil de `npx @modelcontextprotocol/inspector` affiche des connexions préconfigurées (filesystem, everything, example-server) au lieu d'un état vide, ce qui peut laisser croire que la cible n'apparaît pas | Clarifié à l'Étape 10 : il faut cliquer sur « Ajouter des serveurs » pour configurer manuellement la connexion Streamable HTTP vers le serveur cible |
 
-## Roadmap (les sprints)
-
-Voir le détail complet des tâches dans `docs/PPP_Planning_Sprints.docx` et le tracker `docs/PPP_Sprints_Taches.xlsx`.
-
-- Sprint 0 : Setup et cadrage
-- Sprint 1 : Socle commun MCP
-- Sprint 2 : Sécurité applicative (Keycloak, OAuth 2.1, RBAC)
-- Sprint 3 : Serveur MCP vulnérable (cobaye pour la démo)
-- Sprint 4 : Sandbox et isolation runtime (gVisor)
-- Sprint 5 : Serverless et cycle de vie éphémère
-- Sprint 6 : Orchestration et gateway
-- Sprint 7 : Intégration finale, TCO et livrables
-
-## Contribution de l'équipe
-
-1. Créer une branche à partir de `main` : `git checkout -b feature/nom-de-la-tache`
-2. Committer avec des messages clairs : `git commit -m "Sprint 1 : ajout du Tool add()"`
-3. Pousser et ouvrir une Pull Request : `git push origin feature/nom-de-la-tache`
-4. Demander une revue à au moins un coéquipier avant de fusionner
-
-## Sécurité
-
-Ce dépôt contient volontairement, à partir du Sprint 3, un serveur MCP vulnérable utilisé à des fins pédagogiques et démonstratives. Ne jamais déployer ce code en dehors d'un environnement de laboratoire isolé. Voir `src/vulnerable_server/README.md` pour les règles d'isolation strictes.
-
-## Licence
-
-Projet académique, usage pédagogique uniquement.
