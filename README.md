@@ -11,7 +11,7 @@ Plateforme d'exécution sécurisée pour serveurs MCP (Model Context Protocol) :
 
 **Partie B : Virtualisation et Cloud** :
 - Axe 1 : Sandbox et isolation du runtime (gVisor)
-- Axe 2 : Architecture serverless et cycle de vie éphémère (k3s, OpenFaaS, LocalStack)
+- Axe 2 : Architecture serverless et cyle de vie éphémère (k3s, OpenFaaS, LocalStack)
 - Axe 3 : Orchestration et gateway d'accès (gateway FastMCP maison)
 
 **Démo centrale** : "attaque contenue" — serveur MCP vulnérable attaqué sans protection (compromission totale) puis avec la plateforme (attaque bloquée/contenue). Détail : `docs/demo-attaque-contenue.md`.
@@ -73,7 +73,7 @@ Réponse `"serverInfo":{"name":"MCP Gateway - Sprint 6"...}` = axe 3 validé.
 
 **[GUI]** optionnel : coller `Authorization: Bearer <TOKEN>` dans Headers de MCP Inspector avant connexion à `http://127.0.0.1:9000/mcp` (non persistant entre rechargements, démo ponctuelle seulement).
 
-### Étape 5bis : RBAC — autorisation par rôle **[CLI]**
+### Étape 5bis : RBAC  autorisation par rôle **[CLI]**
 
 Un deuxième rôle Keycloak (`mcp-admin`) et un deuxième utilisateur (`adminuser`) démontrent un vrai contrôle d'autorisation : l'outil `add` exige le rôle `mcp-admin`, `hello` reste ouvert à tout utilisateur authentifié.
 
@@ -92,7 +92,7 @@ TOKEN_TEST=$(curl -s -X POST http://localhost:8080/realms/mcp-secure-platform/pr
 curl -s -X POST http://127.0.0.1:9000/mcp -H "Authorization: Bearer $TOKEN_TEST" \
   -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"add","arguments":{"a":1,"b":2}}}'
-# -> "Accès refusé : l'outil 'add' nécessite le rôle 'mcp-admin'"
+# -> "Accès refusé : loutil 'add' nécessite le rôle 'mcp-admin'"
 ```
 
 Avec un token `adminuser` (rôle `mcp-admin` en plus), le même appel passe. Implémentation : `src/gateway/gateway.py` (`ToolRoleRequirementMiddleware`).
