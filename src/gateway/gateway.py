@@ -116,6 +116,53 @@ class ToolRoleRequirementMiddleware(Middleware):
 
 mcp.add_middleware(ToolRoleRequirementMiddleware())
 
+# --- Scopes OAuth distincts du RBAC (cahier des charges B.5, Couche 1) ---
+# Le role RBAC verifie ci-dessus decrit l'IDENTITE permanente de l'utilisateur
+# dans Keycloak. Un scope OAuth decrit, lui, ce que CE JETON PRECIS a ete
+# autorise a demander au moment de son emission (parametre scope= de la
+# requete de token, cf. scripts/keycloak_init.sh). Les deux controles sont
+# volontairement independants : meme un utilisateur avec le role requis se
+# voit refuser l'acces si son jeton ne porte pas le scope necessaire (jeton
+# obtenu sans le demander explicitement).
+TOOL_SCOPE_REQUIREMENTS = {
+    "add": "mcp:tools:write",  # outil sensible : exige aussi le scope OAuth mcp:tools:write
+}
+
+
+class ToolScopeRequirementError(Exception):
+    """Levee quand le token authentifie n'a pas le scope OAuth requis pour l'outil demande."""
+    pass
+
+
+class ToolScopeRequirementMiddleware(Middleware):
+    """
+    Verifie, pour les outils listes dans TOOL_SCOPE_REQUIREMENTS, que le token
+    JWT deja authentifie porte bien le scope OAuth requis (claim 'scope',
+    chaine separee par des espaces, standard OAuth 2.1). Independant du
+    controle par role RBAC (ToolRoleRequirementMiddleware ci-dessus) : les
+    deux barrieres doivent passer separement.
+    """
+
+    async def on_call_tool(self, context, call_next):
+        tool_name = context.message.name
+        required_scope = TOOL_SCOPE_REQUIREMENTS.get(tool_name)
+
+        if required_scope:
+            token = get_access_token()
+            granted_scopes = (token.claims.get("scope", "") if token else "").split()
+            if required_scope not in granted_scopes:
+                identity = get_client_identity(context)
+                raise ToolScopeRequirementError(
+                    f"Accès refusé : l'outil '{tool_name}' nécessite le scope OAuth "
+                    f"'{required_scope}' (jeton de '{identity}' ne le porte pas ; "
+                    f"scopes présents : {granted_scopes or ['aucun']})."
+                )
+
+        return await call_next(context)
+
+
+mcp.add_middleware(ToolScopeRequirementMiddleware())
+
 class ToolCallRateLimitingMiddleware(SlidingWindowRateLimitingMiddleware):
     """
     Variante du middleware officiel SlidingWindowRateLimitingMiddleware : au lieu

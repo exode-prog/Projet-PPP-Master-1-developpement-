@@ -161,6 +161,17 @@ curl http://127.0.0.1:31112/function/mcp-server-function   # repond
 
 Preuve que c'est un vrai cycle éphémère (pas un redémarrage) : l'ID du conteneur avant/après diffère entièrement (`containerd://0d0ceaf6...` → `containerd://c3fe4dc6...`), confirmant une destruction puis création d'instance neuve.
 
+### Étape 5nonies : Scopes OAuth distincts du RBAC (cahier des charges B.5) **[CLI]**
+
+Manque : aucun scope OAuth distinct des rôles RBAC (`mcp-user`/`mcp-admin`). Fix :
+deux client scopes Keycloak (`mcp:tools:read` par défaut, `mcp:tools:write` optionnel,
+demandé via `scope=` à l'émission du jeton) + middleware gateway indépendant du rôle.
+
+Vérification : `adminuser` (rôle `mcp-admin`) sans le scope `mcp:tools:write` → `add`
+refusé ("scope requis absent"). Même utilisateur, jeton avec
+`scope=openid mcp:tools:write` → `add` réussit (`5.0`). Même rôle, résultat différent
+selon le scope du jeton : preuve que les deux contrôles sont indépendants.
+
 ### Étape 4bis : Répartition de charge (load balancing) **[CLI]**
 
 Deux instances (`target-server-1`, `target-server-2`) derrière nginx (`target-lb`), hachage sur `mcp-session-id` : une session reste sur la même instance, des sessions différentes se répartissent. Vérifié (5 sessions testées, répartition confirmée).

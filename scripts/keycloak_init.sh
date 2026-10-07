@@ -93,4 +93,79 @@ echo "Attribution des roles a $ADMIN_USER (mcp-user + mcp-admin)"
 $KCADM add-roles -r $REALM --uusername $ADMIN_USER --rolename $ROLE_NAME 2>/dev/null || echo "(deja attribue, on continue)"
 $KCADM add-roles -r $REALM --uusername $ADMIN_USER --rolename $ADMIN_ROLE_NAME 2>/dev/null || echo "(deja attribue, on continue)"
 
+# --- Scopes OAuth distincts du RBAC (cahier des charges B.5, Couche 1) ---
+# Contrairement aux roles RBAC ci-dessus (mcp-user/mcp-admin, lies a l'IDENTITE
+# permanente de l'utilisateur dans Keycloak), un scope OAuth decrit ce que CE
+# JETON PRECIS a ete autorise a demander au moment de son emission (parametre
+# scope= de la requete de token). Un utilisateur avec le role mcp-admin peut
+# tout de meme obtenir un jeton SANS le scope mcp:tools:write, et se voir alors
+# refuser l'acces a l'outil "add" malgre son role : les deux controles sont
+# volontairement independants.
+
+SCOPE_READ_NAME="mcp:tools:read"
+SCOPE_WRITE_NAME="mcp:tools:write"
+
+# NB : l'image quay.io/keycloak/keycloak ne fournit pas python3. On extrait
+# les ids a la main (grep/sed), soit directement depuis la sortie de "kcadm
+# create" (qui affiche "Created new client-scope with id '...'"), soit en
+# cherchant la ligne "id" la plus proche de la ligne "name" correspondante
+# dans la liste JSON retournee par "kcadm get client-scopes".
+
+get_scope_id() {
+  local scope_name="$1"
+  $KCADM get client-scopes -r $REALM 2>/dev/null \
+    | grep -B 3 "\"name\" : \"$scope_name\"" \
+    | grep -o '"id" : "[^"]*"' \
+    | tail -1 \
+    | sed 's/"id" : "//;s/"$//'
+}
+
+create_scope_if_missing() {
+  local scope_name="$1"
+  local existing_id
+  existing_id=$(get_scope_id "$scope_name")
+  if [ -n "$existing_id" ]; then
+    echo "$existing_id"
+    return
+  fi
+  cat > /tmp/scope_payload.json <<JSON
+{
+  "name": "$scope_name",
+  "protocol": "openid-connect",
+  "attributes": {
+    "include.in.token.scope": "true",
+    "display.on.consent.screen": "true"
+  }
+}
+JSON
+  local create_output
+  create_output=$($KCADM create client-scopes -r $REALM -f /tmp/scope_payload.json 2>&1)
+  echo "$create_output" >&2
+  local new_id
+  new_id=$(echo "$create_output" | grep -oP "id '\K[a-f0-9-]+(?=')")
+  if [ -n "$new_id" ]; then
+    echo "$new_id"
+  else
+    get_scope_id "$scope_name"
+  fi
+}
+
+echo "Creation/verification du client scope $SCOPE_READ_NAME (scope par defaut)"
+SCOPE_READ_ID=$(create_scope_if_missing "$SCOPE_READ_NAME")
+echo "  id=$SCOPE_READ_ID"
+
+echo "Creation/verification du client scope $SCOPE_WRITE_NAME (scope optionnel)"
+SCOPE_WRITE_ID=$(create_scope_if_missing "$SCOPE_WRITE_NAME")
+echo "  id=$SCOPE_WRITE_ID"
+
+echo "Attachement de $SCOPE_READ_NAME comme scope PAR DEFAUT du client $CLIENT_ID"
+$KCADM update clients/$CLIENT_UUID/default-client-scopes/$SCOPE_READ_ID -r $REALM 2>/dev/null \
+  || echo "(deja attache ou non applicable, on continue)"
+
+echo "Attachement de $SCOPE_WRITE_NAME comme scope OPTIONNEL du client $CLIENT_ID"
+$KCADM update clients/$CLIENT_UUID/optional-client-scopes/$SCOPE_WRITE_ID -r $REALM 2>/dev/null \
+  || echo "(deja attache ou non applicable, on continue)"
+
+echo "Scopes OAuth configures avec succes (cdc B.5, distincts du RBAC)."
+
 echo "Initialisation Keycloak terminee avec succes."
