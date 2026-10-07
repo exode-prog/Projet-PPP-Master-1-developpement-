@@ -26,6 +26,16 @@ INSTANCE_ID = os.environ.get("INSTANCE_ID", "unique")
 @mcp.tool()
 async def hello(ctx: Context, name: str = "monde") -> str:
     """Retourne un message de salutation simple. Sert à valider la chaîne MCP de bout en bout."""
+    # Consentement explicite (cdc A.6) : requis pour CHAQUE outil, pas seulement ceux
+    # avec l'annotation destructiveHint (jugee insuffisante par le cdc).
+    consent = await ctx.elicit(
+        message=f"Confirmer l'exécution de hello (name={name!r}) ?",
+        response_type=bool,
+    )
+    if consent.action != "accept" or not consent.data:
+        log_event("hello", {"name": name}, "error", "Consentement refusé")
+        raise ValueError("Opération annulée : consentement non accordé par l'utilisateur.")
+
     # Primitive Logging (A.2, cdc) : message envoye au client pendant l'execution,
     # distinct du journal d'audit applicatif (audit.py) qui reste cote serveur.
     await ctx.info(f"Appel de l'outil hello avec name={name!r}")
@@ -81,6 +91,15 @@ def server_config(section: str) -> dict:
 @mcp.tool()
 async def summarize_audit_log(ctx: Context, last_n: int = 5) -> str:
     """Resume les dernieres entrees du journal d'audit via le LLM de l'hote (primitive Sampling, A.2 cdc)."""
+    # Consentement explicite (cdc A.6)
+    consent = await ctx.elicit(
+        message=f"Confirmer la lecture et le résumé des {last_n} dernières entrées du journal d'audit ?",
+        response_type=bool,
+    )
+    if consent.action != "accept" or not consent.data:
+        log_event("summarize_audit_log", {"last_n": last_n}, "error", "Consentement refusé")
+        raise ValueError("Opération annulée : consentement non accordé par l'utilisateur.")
+
     await ctx.info(f"Lecture des {last_n} dernieres entrees de audit.log pour resume (Sampling)")
     audit_path = os.environ.get("AUDIT_LOG_PATH", "audit.log")
     try:
@@ -121,6 +140,15 @@ async def summarize_audit_log(ctx: Context, last_n: int = 5) -> str:
 @mcp.tool()
 async def list_client_roots(ctx: Context) -> list[str]:
     """Liste les repertoires racines (roots) que le client MCP a declares comme accessibles (primitive Roots, A.2 cdc)."""
+    # Consentement explicite (cdc A.6)
+    consent = await ctx.elicit(
+        message="Confirmer la demande de la liste des répertoires racines (roots) au client ?",
+        response_type=bool,
+    )
+    if consent.action != "accept" or not consent.data:
+        log_event("list_client_roots", {}, "error", "Consentement refusé")
+        raise ValueError("Opération annulée : consentement non accordé par l'utilisateur.")
+
     await ctx.debug("Demande de la liste des roots au client")
     roots = await ctx.list_roots()
     return [str(r.uri) for r in roots]

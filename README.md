@@ -182,6 +182,16 @@ Vérification : conteneur durci → `Network is unreachable` ; conteneur non dur
 (même requête) → réponse HTTP reçue (connectivité confirmée). Preuve réelle de
 no-egress, pas seulement assumée.
 
+### Étape 5undecies : Consentement explicite sur chaque outil (cahier des charges A.6) **[CLI]**
+
+Manque : seul `add` avait `ctx.elicit()`. Fix : ajouté aussi à `hello`,
+`summarize_audit_log`, `list_client_roots` — les 4 outils exigent désormais un
+consentement explicite avant exécution.
+
+Vérification : `hello` accepté → exécuté normalement. `list_client_roots`
+refusé → `"Opération annulée : consentement non accordé par l'utilisateur."`,
+aucune exécution.
+
 ### Étape 4bis : Répartition de charge (load balancing) **[CLI]**
 
 Deux instances (`target-server-1`, `target-server-2`) derrière nginx (`target-lb`), hachage sur `mcp-session-id` : une session reste sur la même instance, des sessions différentes se répartissent. Vérifié (5 sessions testées, répartition confirmée).
