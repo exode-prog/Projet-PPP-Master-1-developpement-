@@ -44,4 +44,6 @@ services:
 networks:
   vulnerable-hardened-net:
     driver: bridge
+    internal: true  # no-egress reel (cdc B.3/B.5) : aucune route vers l'exterieur,
+                     # contrairement a un bridge Docker normal qui route via NAT.
     # Réseau isolé, séparé de vulnerable-net (Sprint 3) et de mcp-net (production)

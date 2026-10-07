@@ -172,6 +172,16 @@ refusé ("scope requis absent"). Même utilisateur, jeton avec
 `scope=openid mcp:tools:write` → `add` réussit (`5.0`). Même rôle, résultat différent
 selon le scope du jeton : preuve que les deux contrôles sont indépendants.
 
+### Étape 5decies : No-egress réel au niveau Docker (cdc B.3/B.5) **[CLI]**
+
+Limite connue (`docs/no-egress-sprint5.md`) : la `NetworkPolicy` k3s n'est pas
+appliquée par Flannel. Fix complémentaire : `internal: true` sur
+`vulnerable-hardened-net` (Docker), réseau sans route vers l'extérieur.
+
+Vérification : conteneur durci → `Network is unreachable` ; conteneur non durci
+(même requête) → réponse HTTP reçue (connectivité confirmée). Preuve réelle de
+no-egress, pas seulement assumée.
+
 ### Étape 4bis : Répartition de charge (load balancing) **[CLI]**
 
 Deux instances (`target-server-1`, `target-server-2`) derrière nginx (`target-lb`), hachage sur `mcp-session-id` : une session reste sur la même instance, des sessions différentes se répartissent. Vérifié (5 sessions testées, répartition confirmée).
