@@ -1,0 +1,48 @@
+# Copie DEMO de docker-compose.vulnerable-hardened.yml, pour la démonstration
+# live de l'axe 1 (RCE + containment gVisor) via MCP Inspector.
+#
+# Différence volontaire avec le fichier officiel : PAS de "internal: true" sur
+# le réseau, pour que le port publié reste joignable depuis l'hôte (Inspector
+# doit pouvoir s'y connecter en HTTP). Le no-egress réel (cdc B.3/B.5) reste
+# prouvé séparément par docker-compose.vulnerable-hardened.yml (inchangé).
+#
+# Lancement : docker compose -f docker-compose.vulnerable-hardened-demo.yml up
+
+services:
+  vulnerable-server-hardened-demo:
+    build:
+      context: .
+      dockerfile: src/vulnerable_server/Dockerfile
+    container_name: mcp-vulnerable-server-HARDENED-DEMO
+    runtime: runsc                    # gVisor : isolation du runtime
+    restart: "no"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+          pids: 256
+    ports:
+      - "127.0.0.1:8003:8002"         # port different de 8001 (non protege) et 8002 (officiel no-egress)
+    environment:
+      - MCP_TRANSPORT=http
+      - MCP_PORT=8002
+
+    # --- Durcissement (cahier des charges Partie B.3, Axe 1) ---
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./security/seccomp-hardened.json
+      - apparmor=mcp-vulnerable-hardened
+    networks:
+      - vulnerable-hardened-demo-net
+
+networks:
+  vulnerable-hardened-demo-net:
+    driver: bridge
+    # Pas de "internal: true" ici : reseau demo, joignable depuis l'hote pour Inspector.
