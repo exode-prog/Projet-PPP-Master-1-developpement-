@@ -36,6 +36,10 @@ if [ -z "$CLIENT_UUID" ]; then
     -s secret=$CLIENT_SECRET \
     -s directAccessGrantsEnabled=true \
     -s standardFlowEnabled=true
+  # Bug corrige : CLIENT_UUID n'etait jamais relu apres creation sur un realm
+  # neuf, et restait vide pour tout le reste du script (echec silencieux de
+  # l'attachement des scopes plus loin, URL .../clients//default-client-scopes/...).
+  CLIENT_UUID=$($KCADM get clients -r $REALM -q clientId=$CLIENT_ID | grep -o '"id" : "[^"]*"' | head -1 | sed 's/"id" : "//;s/"$//')
 else
   echo "Client $CLIENT_ID deja present (id=$CLIENT_UUID), on ne touche a rien"
 fi
@@ -158,13 +162,38 @@ echo "Creation/verification du client scope $SCOPE_WRITE_NAME (scope optionnel)"
 SCOPE_WRITE_ID=$(create_scope_if_missing "$SCOPE_WRITE_NAME")
 echo "  id=$SCOPE_WRITE_ID"
 
+# Attachement avec verification post-condition + retry : l'appel kcadm update
+# peut echouer silencieusement sur un realm fraichement cree (observe sur une
+# seconde machine) ; on ne masque plus l'erreur et on reessaie avant d'abandonner.
+attach_scope() {
+  local scope_type="$1"   # "default-client-scopes" ou "optional-client-scopes"
+  local scope_id="$2"
+  local scope_name="$3"
+
+  if $KCADM get clients/$CLIENT_UUID/$scope_type -r $REALM 2>/dev/null | grep -q "\"id\" : \"$scope_id\""; then
+    echo "  $scope_name deja attache ($scope_type)"
+    return 0
+  fi
+
+  local out
+  for attempt in 1 2 3; do
+    if out=$($KCADM update clients/$CLIENT_UUID/$scope_type/$scope_id -r $REALM 2>&1); then
+      echo "  $scope_name attache ($scope_type)"
+      return 0
+    fi
+    echo "  tentative $attempt/3 echouee pour $scope_name : $out" >&2
+    sleep 2
+  done
+
+  echo "ERREUR : attachement de $scope_name ($scope_type) impossible : $out" >&2
+  return 1
+}
+
 echo "Attachement de $SCOPE_READ_NAME comme scope PAR DEFAUT du client $CLIENT_ID"
-$KCADM update clients/$CLIENT_UUID/default-client-scopes/$SCOPE_READ_ID -r $REALM 2>/dev/null \
-  || echo "(deja attache ou non applicable, on continue)"
+attach_scope "default-client-scopes" "$SCOPE_READ_ID" "$SCOPE_READ_NAME"
 
 echo "Attachement de $SCOPE_WRITE_NAME comme scope OPTIONNEL du client $CLIENT_ID"
-$KCADM update clients/$CLIENT_UUID/optional-client-scopes/$SCOPE_WRITE_ID -r $REALM 2>/dev/null \
-  || echo "(deja attache ou non applicable, on continue)"
+attach_scope "optional-client-scopes" "$SCOPE_WRITE_ID" "$SCOPE_WRITE_NAME"
 
 echo "Scopes OAuth configures avec succes (cdc B.5, distincts du RBAC)."
 
