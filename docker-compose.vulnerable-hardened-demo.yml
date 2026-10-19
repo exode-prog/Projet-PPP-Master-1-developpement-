@@ -12,7 +12,7 @@ services:
   vulnerable-server-hardened-demo:
     build:
       context: .
-      dockerfile: src/vulnerable_server/Dockerfile
+      dockerfile: src/vulnerable_server/Dockerfile.hardened
     container_name: mcp-vulnerable-server-HARDENED-DEMO
     runtime: runsc                    # gVisor : isolation du runtime
     restart: "no"
