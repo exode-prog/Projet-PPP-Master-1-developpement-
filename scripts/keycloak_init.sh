@@ -35,7 +35,8 @@ if [ -z "$CLIENT_UUID" ]; then
     -s publicClient=false \
     -s secret=$CLIENT_SECRET \
     -s directAccessGrantsEnabled=true \
-    -s standardFlowEnabled=true
+    -s standardFlowEnabled=true \
+    -s 'redirectUris=["http://localhost:9999/callback"]'
   # Bug corrige : CLIENT_UUID n'etait jamais relu apres creation sur un realm
   # neuf, et restait vide pour tout le reste du script (echec silencieux de
   # l'attachement des scopes plus loin, URL .../clients//default-client-scopes/...).
