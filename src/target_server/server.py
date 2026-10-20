@@ -10,10 +10,21 @@ Lancement en Streamable HTTP (pour accès distant / conteneurisé) :
 """
 
 import os
+from fastmcp.server.dependencies import get_http_headers
 
 from fastmcp import FastMCP, Context
 from mcp.types import Completion, ResourceTemplateReference
 from audit import log_event
+
+def _caller_identity() -> str:
+    """
+    Identite de l'appelant pour le journal d'audit (point jury 1, cdc A.2).
+    Lit le header X-MCP-User, calcule par le gateway a partir du jeton JWT
+    qu'il a deja verifie (jamais le jeton brut lui-meme, cf. gateway.py).
+    "inconnu" si absent (appel direct hors gateway, utilise par certains
+    scripts de test qui verifient le serveur cible isolement).
+    """
+    return get_http_headers().get("x-mcp-user", "inconnu")
 
 mcp = FastMCP(name="Projet master 1 : mcp-secure-platform")
 
@@ -33,14 +44,14 @@ async def hello(ctx: Context, name: str = "monde") -> str:
         response_type=bool,
     )
     if consent.action != "accept" or not consent.data:
-        log_event("hello", {"name": name}, "error", "Consentement refusé")
+        log_event("hello", {"name": name}, "error", "Consentement refusé", user=_caller_identity())
         raise ValueError("Opération annulée : consentement non accordé par l'utilisateur.")
 
     # Primitive Logging (A.2, cdc) : message envoye au client pendant l'execution,
     # distinct du journal d'audit applicatif (audit.py) qui reste cote serveur.
     await ctx.info(f"Appel de l'outil hello avec name={name!r}")
     result = f"Bonjour, {name} ! Le serveur MCP fonctionne correctement. (instance: {INSTANCE_ID})"
-    log_event("hello", {"name": name}, "success", result)
+    log_event("hello", {"name": name}, "success", result, user=_caller_identity())
     return result
 
 
@@ -54,11 +65,11 @@ async def add(a: float, b: float, ctx: Context) -> float:
     )
 
     if result.action != "accept" or not result.data:
-        log_event("add", {"a": a, "b": b}, "error", "Consentement refusé")
+        log_event("add", {"a": a, "b": b}, "error", "Consentement refusé", user=_caller_identity())
         raise ValueError("Opération annulée : consentement non accordé par l'utilisateur.")
 
     computed = a + b
-    log_event("add", {"a": a, "b": b}, "success", computed)
+    log_event("add", {"a": a, "b": b}, "success", computed, user=_caller_identity())
     return computed
 
 
@@ -97,7 +108,7 @@ async def summarize_audit_log(ctx: Context, last_n: int = 5) -> str:
         response_type=bool,
     )
     if consent.action != "accept" or not consent.data:
-        log_event("summarize_audit_log", {"last_n": last_n}, "error", "Consentement refusé")
+        log_event("summarize_audit_log", {"last_n": last_n}, "error", "Consentement refusé", user=_caller_identity())
         raise ValueError("Opération annulée : consentement non accordé par l'utilisateur.")
 
     await ctx.info(f"Lecture des {last_n} dernieres entrees de audit.log pour resume (Sampling)")
@@ -146,7 +157,7 @@ async def list_client_roots(ctx: Context) -> list[str]:
         response_type=bool,
     )
     if consent.action != "accept" or not consent.data:
-        log_event("list_client_roots", {}, "error", "Consentement refusé")
+        log_event("list_client_roots", {}, "error", "Consentement refusé", user=_caller_identity())
         raise ValueError("Opération annulée : consentement non accordé par l'utilisateur.")
 
     await ctx.debug("Demande de la liste des roots au client")

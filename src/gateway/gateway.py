@@ -65,13 +65,21 @@ def get_client_identity(context) -> str:
 # Anti-token-passthrough (cahier des charges A.6) : create_proxy() force
 # forward_incoming_headers=True, ce qui relaierait tel quel le JWT du client
 # vers target-server (jamais verifie la-bas). On construit donc nous-memes
-# le ProxyClient pour desactiver explicitement ce forward.
-_base_proxy_client = ProxyClient(BACKEND_URL)
-if isinstance(_base_proxy_client.transport, (StreamableHttpTransport, SSETransport)):
-    _base_proxy_client.transport.forward_incoming_headers = False
-
+# un ProxyClient, avec forward_incoming_headers=False.
+#
+# Identite de l'appelant dans l'audit (cahier des charges A.2) : on construit
+# un transport ET un dict de headers NEUFS a chaque appel (plutot que de
+# reutiliser un client partage via .new(), qui reutilise le MEME objet
+# transport -- donc le MEME dict headers -- entre requetes concurrentes :
+# risque reel de fuite d'identite entre deux utilisateurs appelant la gateway
+# en meme temps). Le header X-MCP-User transmis ici est calcule par le
+# gateway a partir du jeton deja verifie (preferred_username/sub) ; ce n'est
+# jamais le jeton JWT brut qui est relaye (anti-passthrough toujours respecte).
 def _proxy_client_factory():
-    return _base_proxy_client.new()
+    identity = get_client_identity(None)
+    transport = StreamableHttpTransport(BACKEND_URL, headers={"X-MCP-User": identity})
+    transport.forward_incoming_headers = False
+    return ProxyClient(transport)
 
 mcp = FastMCPProxy(client_factory=_proxy_client_factory, name="MCP Gateway - Sprint 6", auth=auth)
 
