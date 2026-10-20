@@ -1,4 +1,9 @@
 import os
+import json
+from datetime import datetime, timezone
+import httpx
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 from fastmcp.server.providers.proxy import FastMCPProxy, ProxyClient
 from fastmcp.client.transports.http import StreamableHttpTransport
 from fastmcp.client.transports.sse import SSETransport
@@ -180,7 +185,6 @@ class ToolCallRateLimitingMiddleware(SlidingWindowRateLimitingMiddleware):
     """
 
     async def on_request(self, context, call_next):
-        # On laisse passer sans comptage : initialize, notifications, listes, etc.
         return await call_next(context)
 
     async def on_call_tool(self, context, call_next):
@@ -197,13 +201,88 @@ class ToolCallRateLimitingMiddleware(SlidingWindowRateLimitingMiddleware):
         return await call_next(context)
 
 
-mcp.add_middleware(
-    ToolCallRateLimitingMiddleware(
-        max_requests=QUOTA_MAX_CALLS,
-        window_minutes=QUOTA_WINDOW_MINUTES,
-        get_client_id=get_client_identity,
-    )
+# Instance nommee : reutilisee par la route /invoke-function ci-dessous, pour
+# appliquer EXACTEMENT le meme compteur de quota qu'aux outils MCP classiques.
+quota_middleware = ToolCallRateLimitingMiddleware(
+    max_requests=QUOTA_MAX_CALLS,
+    window_minutes=QUOTA_WINDOW_MINUTES,
+    get_client_id=get_client_identity,
 )
+mcp.add_middleware(quota_middleware)
+
+# --- Relais vers la fonction OpenFaaS (integration serverless) ---
+# mcp-server-function tourne sous k3s avec runtimeClassName: gvisor. Ce n'est
+# pas un serveur MCP (endpoint REST simple), donc le proxy MCP ci-dessus ne
+# peut pas la relayer nativement : cette route HTTP dediee applique la meme
+# verification JWT et le meme quota qu'un outil MCP, puis relaie vers la
+# fonction et trace l'appel dans un journal d'audit dedie au gateway.
+GATEWAY_AUDIT_LOG_PATH = os.environ.get("GATEWAY_AUDIT_LOG_PATH", "/tmp/gateway_audit.log")
+OPENFAAS_FUNCTION_URL = os.environ.get(
+    "OPENFAAS_FUNCTION_URL", "http://172.18.0.1:31112/function/mcp-server-function"
+)
+
+
+def log_gateway_event(action: str, user: str, params: dict, status: str, detail: str) -> None:
+    """Journal d'audit cote gateway, distinct de audit.log (target-server)."""
+    event = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "action": action,
+        "user": user,
+        "params": params,
+        "status": status,
+        "detail": detail,
+    }
+    try:
+        with open(GATEWAY_AUDIT_LOG_PATH, "a") as f:
+            f.write(json.dumps(event) + "\n")
+    except OSError as e:
+        print(f"ERREUR ecriture audit gateway: {e}")
+
+
+@mcp.custom_route("/invoke-function", methods=["POST"])
+async def invoke_function(request: Request) -> JSONResponse:
+    """Relaie vers mcp-server-function (gVisor) apres verification JWT + quota."""
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.lower().startswith("bearer "):
+        log_gateway_event("invoke_openfaas_function", "anonyme", {}, "error",
+                           "En-tete Authorization manquant ou mal forme")
+        return JSONResponse({"error": "Authorization: Bearer <token> requis"}, status_code=401)
+
+    token_str = auth_header[len("Bearer "):].strip()
+    access_token = await auth.verify_token(token_str)
+    if access_token is None:
+        log_gateway_event("invoke_openfaas_function", "inconnu", {}, "error",
+                           "Jeton JWT invalide ou expire")
+        return JSONResponse({"error": "jeton JWT invalide ou expire"}, status_code=401)
+
+    identity = (
+        access_token.claims.get("preferred_username")
+        or access_token.claims.get("sub")
+        or "inconnu"
+    )
+
+    limiter = quota_middleware.limiters[identity]
+    allowed = await limiter.is_allowed()
+    if not allowed:
+        log_gateway_event("invoke_openfaas_function", identity, {}, "error",
+                           f"Quota depasse ({QUOTA_MAX_CALLS}/{QUOTA_WINDOW_MINUTES}min)")
+        return JSONResponse({"error": "quota depasse"}, status_code=429)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(OPENFAAS_FUNCTION_URL, json=body, timeout=15.0)
+        log_gateway_event("invoke_openfaas_function", identity, body, "success",
+                           f"HTTP {resp.status_code} depuis la fonction OpenFaaS (gVisor)")
+        return JSONResponse(resp.json(), status_code=resp.status_code)
+    except Exception as e:
+        log_gateway_event("invoke_openfaas_function", identity, body, "error", str(e))
+        return JSONResponse({"error": f"echec appel fonction OpenFaaS: {e}"}, status_code=502)
+
 
 if __name__ == "__main__":
     transport = os.environ.get("MCP_TRANSPORT", "http")

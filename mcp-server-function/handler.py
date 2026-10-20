@@ -1,25 +1,52 @@
 """
-Handler OpenFaaS — Sprint 5 (Container-per-session).
+Handler OpenFaaS pour mcp-server-function.
 
-Ce handler sert de point d'entrée pour la fonction serverless. Il transmet
-la requête reçue au serveur MCP interne (démarré au sein du même conteneur),
-permettant à OpenFaaS de gérer le cycle de vie (spawn/scale-to-zero) sans
-modifier la logique du serveur MCP lui-même.
+Vulnerabilite volontaire (CWE-78, injection de commande) : le parametre
+'hostname' recu dans le corps JSON est injecte directement dans une
+commande shell, sans validation ni echappement. Meme pattern que
+src/vulnerable_server/server.py::ping_host.
+
+Exemple d'exploitation :
+    {"hostname": "127.0.0.1; cat /etc/passwd"}
+    {"hostname": "127.0.0.1 && whoami"}
+    {"hostname": "$(id)"}
+
+Le champ 'pod_hostname' de la reponse identifie le pod Kubernetes qui a
+reellement traite la requete.
 """
 
 import json
+import socket
+import subprocess
 
 
 def handle(event, context):
-    """
-    Point d'entrée OpenFaaS. Confirme que la fonction est bien déclenchée
-    et prête à recevoir des requêtes MCP (validation du principe serverless).
-    """
+    try:
+        raw_body = event.body
+        if isinstance(raw_body, bytes):
+            raw_body = raw_body.decode("utf-8", errors="replace")
+        payload = json.loads(raw_body) if raw_body else {}
+    except (json.JSONDecodeError, AttributeError):
+        payload = {}
+
+    hostname = payload.get("hostname", "127.0.0.1")
+
+    # VULNERABILITE : shell=True + concatenation directe = injection de commande
+    command = f"ping -c 1 {hostname}"
+    result = subprocess.run(
+        command,
+        shell=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
     body = {
-        "message": "Fonction serverless MCP active",
-        "method": event.method,
-        "path": event.path,
-        "note": "Cette fonction démontre le cycle de vie éphémère (Sprint 5)",
+        "pod_hostname": socket.gethostname(),
+        "command_executed": command,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "returncode": result.returncode,
     }
 
     return {
