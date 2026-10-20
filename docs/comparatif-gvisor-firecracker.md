@@ -41,7 +41,7 @@ Le tableau ci-dessus synthétise des caractéristiques générales de l'industri
 | CPU à l'idle | 0,37 % | 6,77 % |
 | RAM à l'idle | 64,22 MiB | 92,19 MiB |
 
-Firecracker n'ayant jamais été installé dans ce projet (voir justification ci-dessous), aucune troisième colonne mesurée n'est présentée : plutôt que d'inventer des chiffres non vérifiés, cette limitation est assumée explicitement, et la comparaison avec Firecracker reste fondée sur des valeurs de référence publiques (notamment son temps de démarrage ~125 ms, largement documenté par AWS).
+Firecracker n'ayant jamais été installé dans ce projet (voir justification ci-dessous), aucune troisième colonne mesurée n'est présentée : plutôt que d'inventer des chiffres non vérifiés, cette limitation est assumée explicitement, et la comparaison avec Firecracker reste fondée sur des valeurs de référence publiques (notamment son temps de démarrage < 125 ms sur instance i3.metal, cf. AWS Open Source Blog : https://aws.amazon.com/blogs/opensource/firecracker-open-source-secure-fast-microvm-serverless/).
 
 ## Pourquoi gVisor a été retenu pour ce projet
 
